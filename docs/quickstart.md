@@ -1,0 +1,141 @@
+# Quickstart (MVP)
+
+This is the first runnable slice of Model Graph. It proves the vertical path:
+
+```text
+graph YAML -> schema + semantic validation -> compiled IR -> routed execution
+           -> scoped prompts -> provider -> artifacts -> trace + run manifest -> replay
+```
+
+## 1. Install
+
+```text
+uv sync
+uv run mg version
+```
+
+Python 3.12 is pinned in `.python-version`. The test suite runs offline.
+
+## 2. Validate a graph
+
+```text
+uv run mg validate examples/hello-triage.graph.yaml
+uv run mg validate examples/composed-assistant.graph.yaml
+```
+
+You should see `valid` plus a V-15 warning on the hello graph: its two workers both write the
+`answer` exit artifact with different types (`code` and `text`). That warning is intentional;
+the graph is still valid.
+
+A broken graph exits 1 and reports every error it can find. Machine-readable output:
+
+```text
+uv run mg validate examples/hello-triage.graph.yaml --json
+```
+
+## 3. Run offline with the mock provider
+
+```text
+uv run mg run examples/hello-triage.graph.yaml --provider mock
+```
+
+The mock provider is deterministic. The default mock route selects the first menu entry, which
+is the coding branch for this example. The output includes:
+
+- the routing path;
+- the final artifact;
+- token usage and cost;
+- the run directory.
+
+The run directory contains:
+
+```text
+runs/<run-id>/
+  run.json        # graph hash, models, request, budget, usage, path, artifacts
+  trace.jsonl     # append-only events: render, provider, decision, artifact, usage
+  envelope.json   # request-scoped state, validated against the envelope schema
+  artifacts/      # content-addressed artifact blobs
+```
+
+## 4. Inspect the run
+
+```text
+uv run mg runs list
+uv run mg runs show runs/<run-id>
+uv run mg trace show runs/<run-id>
+uv run mg trace show runs/<run-id> --json
+```
+
+## 5. Replay it
+
+```text
+uv run mg replay runs/<run-id>
+```
+
+Replay serves the recorded provider responses in order. It does not call a model or the
+network. It compares the routing path and exit artifact hashes with the original run and writes
+`replay.json` into the run directory.
+
+If the graph changed since the run, replay refuses with a graph-hash mismatch. Use
+`--allow-ir-mismatch` only for deliberate experiments.
+
+## 6. Run against a local model
+
+The example manifests target Ollama. Install the model and run:
+
+```text
+ollama pull qwen2.5:1.5b-instruct
+ollama pull qwen2.5-coder:7b
+uv run mg run examples/hello-triage.graph.yaml --registry examples/models
+```
+
+`--provider auto` (the default) uses the provider declared in each model manifest. You can
+force a local adapter with `--provider ollama`. The endpoint comes from the manifest; it is not
+embedded in the graph.
+
+If Ollama is not running, the run fails with a typed `MG-3001` connection error and still writes
+a trace/manifest for inspection.
+
+## 7. Nested graph
+
+```text
+uv run mg run examples/composed-assistant.graph.yaml --provider mock
+```
+
+This routes `domain-triage -> coding subgraph -> coding-triage -> js-specialist`. The inner
+graph's artifact is mapped to the outer `answer`; unmapped inner artifacts stay in the trace.
+
+## What the MVP includes
+
+- YAML/JSON loading with duplicate-key detection.
+- Canonical JSON Schema validation and semantic rules V-01..V-20.
+- Model manifests resolved through a local registry, with manifest hashes in the run.
+- Router, worker, joiner, and subgraph execution.
+- Structured route decisions with confidence, fallback, and one repair attempt.
+- Single- and multi-artifact output protocols.
+- Hard budgets: steps, depth, tokens, cost, wall time.
+- Scoped views (a node sees only its declared reads).
+- Deterministic mock provider and OpenAI-compatible/Ollama HTTP adapters.
+- Content-addressed artifacts, trace, envelope, run manifest, and replay.
+- CLI commands: `validate`, `compile`, `run`, `replay`, `trace show`, `runs`, `models`.
+
+## What is not in the MVP yet
+
+- Route flattening, AOT prefix compilation, cross-request batching.
+- Canary/shadow, hot swap, and revision promotion (`T-0038`/`T-0039`).
+- The full evaluation harness and contribution gates.
+- Adapter submission and distillation.
+- Bounded fan-out/ensemble joins.
+- Provider streaming and tools/code execution.
+- A visual inspector.
+
+The next engineering milestones are the evaluation harness and the model-swap workflow. The
+performance track is Phase 5 and deliberately does not block the usable local workflow.
+
+## Test it
+
+```text
+make check
+uv run pytest tests/runtime -q
+uv run pytest tests/cli -q
+```

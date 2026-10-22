@@ -2,16 +2,18 @@
 
 **Compose small, independently trainable language models into a routed graph.**
 
-Model Graph is a design for breaking an AI system into discrete nodes — deciders that
+Model Graph is a system for breaking an AI system into discrete nodes — deciders that
 route a request and specialists that handle it — connected only by natural language.
 Instead of scaling one monolithic model, you compose many small ones: a router decides
 which expert should see the request, the expert answers, and the graph returns the
 result. Experts can be trained by different people on ordinary hardware, versioned
 independently, and pruned when a deployment does not need them.
 
-> **Status: design v0.** This repository currently contains the design, contracts,
-> examples, architectural decisions, and a ticket backlog. There is no runtime code yet.
-> The first implementation ticket is `T-0001` — see [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md).
+> **Status: MVP 0.1.0.** The repository now has a runnable vertical slice: schema and
+> semantic validation, router/worker/joiner/subgraph execution, deterministic mock and local
+> HTTP providers, hard budgets, traces, run manifests, and offline replay. Evaluation,
+> compiled targets, canaries, and model-swap promotion are the next tracks. See
+> [docs/quickstart.md](docs/quickstart.md) and [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md).
 
 ## The idea in one picture
 
@@ -42,6 +44,39 @@ The edges carry language, not tensors. Each model sees a rendered prompt it can
 understand and returns a result or a routing decision. The graph is the composition;
 the language is the bus.
 
+## Quickstart (MVP)
+
+The first runnable slice is in place. It validates graphs, runs them with a deterministic
+mock provider or a local Ollama endpoint, records a trace and run manifest, and replays a
+recorded run offline.
+
+```text
+uv sync
+uv run mg validate examples/hello-triage.graph.yaml
+uv run mg run examples/hello-triage.graph.yaml --provider mock
+uv run mg runs list
+uv run mg replay runs/<run-id>
+uv run mg trace show runs/<run-id>
+```
+
+To use a local model instead of the mock provider, pull the model in Ollama and run with the
+default provider:
+
+```text
+ollama pull qwen2.5:1.5b-instruct
+ollama pull qwen2.5-coder:7b
+uv run mg run examples/hello-triage.graph.yaml --registry examples/models
+```
+
+The composed example exercises nested subgraphs:
+
+```text
+uv run mg run examples/composed-assistant.graph.yaml --provider mock
+```
+
+See [docs/quickstart.md](docs/quickstart.md) for the full walkthrough and the current MVP
+scope.
+
 ## Design principles
 
 1. **Language is the wire.** Any model that can chat can join the graph. No shared
@@ -69,6 +104,7 @@ the language is the bus.
 
 | Path | Purpose |
 | --- | --- |
+| [`docs/quickstart.md`](docs/quickstart.md) | Install, validate, run, inspect, and replay the MVP |
 | [`docs/vision.md`](docs/vision.md) | Problem, thesis, hypotheses, kill criteria, what this is not |
 | [`docs/architecture.md`](docs/architecture.md) | System architecture, components, request lifecycle, deployment |
 | [`docs/graph-model.md`](docs/graph-model.md) | Node kinds, edges, artifact types, YAML anatomy, validation rules |
@@ -81,6 +117,7 @@ the language is the bus.
 | [`docs/evaluation.md`](docs/evaluation.md) | Metrics, suites, baselines, contribution gates |
 | [`docs/roadmap.md`](docs/roadmap.md) | Phases, milestones, sequencing, risk register summary |
 | [`docs/glossary.md`](docs/glossary.md) | Shared vocabulary |
+| [`docs/development.md`](docs/development.md) | Toolchain, checks, and repository layout |
 | [`docs/adr/`](docs/adr/) | Accepted architectural decisions and their trade-offs |
 | [`schemas/`](schemas/) | Machine-checkable contracts (graph, model manifest, envelope, ticket) |
 | [`examples/`](examples/) | Worked graph, manifest, and envelope examples |

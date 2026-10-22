@@ -1,3 +1,7 @@
+# Local tooling caches (sandbox-friendly; not part of the project)
+/.uv-cache/
+/.uv-python/
+
 # Python
 __pycache__/
 *.py[cod]

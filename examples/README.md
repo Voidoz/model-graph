@@ -1,8 +1,13 @@
 # Examples
 
-These examples are design fixtures. They validate against the schemas today; the commands
-below describe the intended interface and will work once the runtime tickets land. See
-[`.scratch/tickets/BOARD.md`](../.scratch/tickets/BOARD.md).
+These examples validate against the schemas and run with the MVP runtime.
+
+```text
+mg validate examples/hello-triage.graph.yaml
+mg run examples/hello-triage.graph.yaml --provider mock
+```
+
+See [`docs/quickstart.md`](../docs/quickstart.md) for the full walkthrough.
 
 | File | What it demonstrates |
 | --- | --- |
@@ -16,7 +21,7 @@ below describe the intended interface and will work once the runtime tickets lan
 
 The manifests are illustrative and point at local Ollama endpoints. They include upstream
 license fields and a note to verify the license before redistribution. They do not download
-anything. To run the examples locally (after T-0013), install the referenced models, for
+anything. To run the examples locally, install the referenced models in Ollama, for
 example:
 
 ```text
@@ -30,25 +35,19 @@ ollama pull mistral:7b-instruct
 `qwen2.5-coder` family; `story-7b` maps to `mistral:7b-instruct`. Confirm the actual model
 names and licenses before publishing results.
 
-## Intended commands
+## Commands
 
 ```text
 mg validate examples/hello-triage.graph.yaml
 mg validate examples/coding-specialist.graph.yaml
 mg validate examples/composed-assistant.graph.yaml
 
-mg run examples/hello-triage.graph.yaml \
-  --registry examples/models \
-  --profile examples/profiles/local-8gb.yaml
-
-mg run examples/composed-assistant.graph.yaml \
-  --registry examples/models \
-  --profile examples/profiles/local-8gb.yaml \
-  --json
+mg run examples/hello-triage.graph.yaml --provider mock
+mg run examples/hello-triage.graph.yaml --registry examples/models
+mg run examples/composed-assistant.graph.yaml --provider mock --json
 ```
 
-The runtime and profile files are delivered by T-0010, T-0013, and T-0015. Until then, only
-validation is expected to work.
+Profiles are a later ticket (T-0015); the MVP uses the provider declared in each manifest.
 
 ## What to look at in `envelope.json`
 
