@@ -9,11 +9,11 @@ which expert should see the request, the expert answers, and the graph returns t
 result. Experts can be trained by different people on ordinary hardware, versioned
 independently, and pruned when a deployment does not need them.
 
-> **Status: MVP 0.1.1 (live-validated on CPU).** The repository now has a runnable vertical slice: schema and
+> **Status: MVP 0.1.1 (live-validated on CPU and Vulkan GPU).** The repository now has a runnable vertical slice: schema and
 > semantic validation, router/worker/joiner/subgraph execution, deterministic mock and local
 > HTTP providers, hard budgets, traces, run manifests, and offline replay. Evaluation,
 > compiled targets, canaries, and model-swap promotion are the next tracks. Live local-model
-> validation passed on CPU with Ollama; GPU timings are not measured yet. See
+> validation passed on CPU and on an RTX 3080 via Ollama Vulkan. See
 > [docs/quickstart.md](docs/quickstart.md) and [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md).
 
 ## The idea in one picture
