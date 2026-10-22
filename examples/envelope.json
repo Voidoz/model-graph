@@ -1,0 +1,81 @@
+{
+  "schema": "modelgraph/envelope/v0",
+  "run": {
+    "id": "run_01J9Z3K4",
+    "graph": {
+      "id": "composed-assistant",
+      "version": "1.0.0",
+      "hash": "sha256:e5ae628eb7a83b25eb6eca61646c05e67a69f8f435afd8eb908466b6295abaa6"
+    },
+    "parent_run_id": null,
+    "depth": 0,
+    "step": 5,
+    "path": [
+      {
+        "node": "domain-triage",
+        "kind": "router",
+        "decision": "route",
+        "to": "coding",
+        "confidence": 0.91,
+        "reason": "The request explicitly asks for a TypeScript implementation."
+      },
+      {
+        "node": "coding",
+        "kind": "subgraph",
+        "graph": "coding-specialist@1.0.0",
+        "graph_hash": "sha256:7fb0240a3e0d540dfa4b1cdfb5b9df54430548a9431895633a4e263efa00d50f"
+      }
+    ],
+    "budget": {
+      "max_steps": 8,
+      "used_steps": 4,
+      "max_depth": 3,
+      "max_total_tokens": 32000,
+      "used_tokens": 4120,
+      "max_cost_usd": 0.1,
+      "used_cost_usd": 0.0,
+      "max_wall_seconds": 300,
+      "elapsed_seconds": 6.2,
+      "on_budget_exhausted": "fail"
+    },
+    "started_at": "2026-10-22T10:00:00Z",
+    "seed": 42
+  },
+  "request": {
+    "task": "Write a debounce function in TypeScript.",
+    "locale": "en",
+    "constraints": {
+      "output_format": "code",
+      "max_output_tokens": 1200
+    }
+  },
+  "inputs": [
+    {
+      "name": "task",
+      "type": "text",
+      "media_type": "text/plain",
+      "content": "Write a debounce function in TypeScript.",
+      "producer": "$input",
+      "created_at": "2026-10-22T10:00:00Z",
+      "hash": "sha256:e88525264b94df4287d2129d051ab0824e9dd7bbd9c215449b9090c895474054"
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "answer",
+      "type": "code",
+      "media_type": "text/typescript",
+      "content": "export function debounce<T extends (...args: any[]) => void>(fn: T, ms = 200) {\n  let timer: ReturnType<typeof setTimeout> | undefined;\n  return (...args: Parameters<T>) => {\n    if (timer) clearTimeout(timer);\n    timer = setTimeout(() => fn(...args), ms);\n  };\n}",
+      "producer": "js-specialist",
+      "created_at": "2026-10-22T10:00:04Z",
+      "hash": "sha256:a284a095a1dc6b608ece985e49fffe448270c5d25bff09bc1a93767ef630c38b"
+    }
+  ],
+  "notes": [
+    {
+      "producer": "domain-triage",
+      "content": "Prefer a generic debounce utility with types and a usage example.",
+      "created_at": "2026-10-22T10:00:01Z"
+    }
+  ]
+}

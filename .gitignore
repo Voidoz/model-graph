@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+/dist/
+/build/
+
+# JavaScript / web UI (later phases)
+node_modules/
+/dist-web/
+.vite/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local.yaml
+*.local.json
+
+# Model weights and large binary artifacts (root-level stores only; examples/models/ is tracked)
+/models/
+/weights/
+*.gguf
+*.safetensors
+*.bin
+*.onnx
+*.pt
+*.ckpt
+
+# Runtime data: traces, caches, runs, databases (root-level stores only)
+/runs/
+/traces/
+/cache/
+/.mg/
+*.trace.jsonl
+*.sqlite
+*.sqlite3
+*.db
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# NOTE: .scratch/ is intentionally tracked. It is the project's working record,
+# including .scratch/runs/ session reports and .scratch/tickets/.

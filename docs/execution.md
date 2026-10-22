@@ -1,0 +1,401 @@
+# Execution
+
+This document describes how a compiled graph becomes a run: scheduling, budgets, pruning,
+caching, replay, and observability. The contracts it consumes are in
+[graph-model.md](graph-model.md) and [protocol.md](protocol.md).
+
+## Contents
+
+1. [From YAML to a run](#1-from-yaml-to-a-run)
+2. [The walk](#2-the-walk)
+3. [Runtime state](#3-runtime-state)
+4. [Budgets](#4-budgets)
+5. [Determinism and replay](#5-determinism-and-replay)
+6. [Pruning and lazy loading](#6-pruning-and-lazy-loading)
+7. [Caching](#7-caching)
+8. [Concurrency and streaming](#8-concurrency-and-streaming)
+9. [Observability](#9-observability)
+10. [Failure semantics](#10-failure-semantics)
+11. [Deferred execution features](#11-deferred-execution-features)
+
+## 1. From YAML to a run
+
+```text
+graph.yaml ──parse──▶ document ──schema──▶ valid document
+                                              │
+                    registry ──resolve───────┤
+                                              ▼
+                                     static validation (V-01..V-20)
+                                              │
+                       profile ──prune────────┤
+                                              ▼
+                                          Graph IR
+                                    (canonical, hashed)
+                                              │
+                                     run manifest (pins)
+                                              ▼
+                                           scheduler
+```
+
+The compiler produces a **Graph IR** with these properties:
+
+- **Self-contained.** Resolved nodes, edges, model references (with manifest hashes),
+  renderer version, default policy, and the artifact contract. The runtime never re-reads
+  YAML.
+- **Canonical.** Nodes are stored in a deterministic order (topological, tie-broken by
+  ID); maps are sorted; defaults are materialized. The IR hash is stable across machines.
+- **Pinned.** Every model reference resolves to an exact manifest version and content
+  hash. Floating tags like `latest` are resolved at compile time and recorded.
+
+A run has an explicit lifecycle:
+
+```text
+created → compiling → ready → running → (succeeded | failed | aborted | budget_exhausted)
+```
+
+`aborted` means a caller cancelled it. `failed` means an unhandled error. `budget_exhausted`
+means a hard limit stopped it; partial artifacts may exist. Every terminal state writes a
+run manifest.
+
+## 2. The walk
+
+v0 executes one active branch at a time. The scheduler is still written around a
+**frontier** (a set of active paths) so fan-out can be added without changing the core
+loop.
+
+```python
+def run(graph, request, profile):
+    ctx = Envelope.create(graph, request, profile)
+    frontier = [Frame(node=graph.entry, path=[], depth=0)]
+
+    while frontier:
+        frame = frontier.pop(0)
+        budget.check_before(frame)                  # may raise MG-4xxx
+
+        node = graph.nodes[frame.node]
+        trace.enter(node, frame)
+
+        if node.kind == "router":
+            view = render_router(ctx, node, graph, frame)
+            decision = call_router(view, node)      # includes repair/retry policy
+            target = resolve_route(decision, node, graph)
+            trace.decision(decision, target)
+            frontier.append(frame.advance(target))
+
+        elif node.kind == "worker":
+            view = render_worker(ctx, node, frame)
+            text, usage = provider.chat(view)
+            budget.charge(usage)
+            artifacts = parse_artifacts(text, node.writes)
+            ctx.write(artifacts, producer=node.id)
+            for target in graph.successors(node):   # only joiners in v0
+                frontier.append(frame.advance(target))
+
+        elif node.kind == "joiner":
+            view = render_joiner(ctx, node, frame)
+            text, usage = provider.chat(view)
+            budget.charge(usage)
+            ctx.write(parse_artifacts(text, node.writes), producer=node.id)
+            frontier.extend(frame.advance(t) for t in graph.successors(node))
+
+        elif node.kind == "subgraph":
+            result = run_subgraph(ctx, node, frame) # shares budget, depth + 1
+            ctx.write(result.mapped_artifacts, producer=node.id)
+            frontier.extend(frame.advance(t) for t in graph.successors(node))
+
+        trace.exit(node, frame)
+
+    return ctx.result_artifacts(graph.exit)
+```
+
+Important properties of this loop:
+
+- **No hidden recursion.** Only a `subgraph` node recurses, and depth is checked before
+  entry. A router cannot call a router outside its declared edges.
+- **The envelope is shared, the prompt is not.** Artifacts accumulate; each render selects.
+- **Budget is checked before every call**, and charged after. A provider call cannot start
+  if the remaining budget is below the node's declared minimum estimate.
+- **One branch in v0.** If a node has multiple successors, only a fan-out-capable node
+  (router with `selection: top_k`, deferred) may activate more than one. The loop's
+  frontier supports it; validation prevents it until the scheduler does.
+
+### 2.1 Subgraph execution
+
+A subgraph invocation:
+
+1. Checks `depth + 1 <= max_depth` (else `MG-4006`).
+2. Creates a child envelope whose `run.parent_run_id` is the current run, whose inputs are
+   the mapped outer artifacts, and which shares the parent's budget object.
+3. Runs the inner graph with the same scheduler and a nested path.
+4. Maps the inner graph's exit artifacts to the node's `writes` via `output_map`.
+5. Discards all other inner artifacts. They are available in the trace, not to the parent.
+
+A subgraph failure propagates as a node failure in the parent, with the child trace linked.
+The parent may have a fallback only at router level; there is no per-node catch in v0.
+
+## 3. Runtime state
+
+| Object | Lifetime | Persisted | Notes |
+| --- | --- | --- | --- |
+| Graph IR | Run | Yes (hash in run manifest) | Immutable |
+| Envelope | Run | Serialized at node boundaries (redacted) | Mutable, single-writer in v0 |
+| Artifacts | Run | Content-addressed blobs | Append-only |
+| Budget | Run | Snapshot per event | Shared with subgraphs |
+| Path/frames | Run | Trace events | Ordered |
+| Trace | Run | `trace.jsonl` | Append-only |
+| Cache | Cross-run | `cache/` | Keyed by content hashes |
+| Model manifests | Cross-run | Registry | Immutable per version |
+
+There is no global mutable state across runs. Two runs can execute concurrently in one
+process if they share only the read-only registry and cache (cache writes are atomic).
+
+## 4. Budgets
+
+Budgets make cost a first-class constraint instead of a surprise.
+
+| Budget | Counts | Charged |
+| --- | --- | --- |
+| `max_steps` | Node entries (routers included); a retry is another provider call but not a new step | Before node entry |
+| `max_depth` | Subgraph nesting | Before subgraph entry |
+| `max_total_tokens` | Input + output tokens reported by providers | After each call |
+| `max_cost_usd` | Estimated cost from manifest prices and usage | After each call |
+| `max_wall_seconds` | Monotonic elapsed time | Before each call and checked between |
+
+Rules:
+
+1. **Hard ceiling.** The runtime never exceeds a budget to finish a request. It fails,
+   unless `on_budget_exhausted: best_effort`, in which case it returns artifacts produced
+   so far and marks the run `budget_exhausted`.
+2. **Pre-flight estimate.** Before a call, the runtime estimates the minimum cost and
+   tokens (input tokens known from the render, output at least 1). If that already exceeds
+   the remainder, the call is vetoed with `MG-4xxx` rather than started and abandoned.
+3. **No negative budgets.** A provider that reports more usage than estimated is charged
+   as reported; the next pre-flight check fails. Under-reporting is a provider bug and is
+   recorded in `provider_meta`.
+4. **Node limits tighten, never loosen.** A node may set a lower `max_output_tokens` or
+   timeout. Only graph defaults (or the run profile) may raise the graph-level ceiling.
+5. **Subgraphs share the budget.** A nested graph cannot reset the counter. This is what
+   prevents recursive composition from becoming a denial-of-service.
+6. **Wall-clock checks are cooperative.** A long provider call cannot be interrupted if
+   the adapter does not support cancellation; the budget is checked immediately after and
+   the run fails. Adapters should honor timeouts.
+
+### 4.1 Budget math
+
+```text
+cost_call = (input_tokens  / 1e6) * manifest.cost.input_per_million_usd
+          + (output_tokens / 1e6) * manifest.cost.output_per_million_usd
+```
+
+- Local models default to zero marginal cost in the manifest, but their latency and
+  resource use are still recorded. Cost is not the only scarce resource.
+- If a provider uses per-request pricing, the manifest declares it and the accountant
+  charges per call.
+- Unknown pricing is recorded as `cost_unknown` and cannot satisfy a `max_cost_usd` check
+  by assumption; the runtime treats unknown cost as zero only if the profile explicitly
+  allows it. Otherwise it warns.
+
+### 4.2 Defaults and profiles
+
+Graph defaults are opinions. A run profile can tighten them (`--profile local-8gb`) or
+change policy filters, but the profile used is recorded in the run manifest. Profiles do
+not silently raise the graph's declared ceiling unless `--allow-budget-override` is passed.
+
+## 5. Determinism and replay
+
+Determinism is a spectrum. The runtime is explicit about what it can guarantee.
+
+| Layer | Guarantee |
+| --- | --- |
+| Compilation | Bit-identical IR for identical inputs and registry versions (canonical form). |
+| Scheduling | Identical node sequence for identical graph and decisions. |
+| Prompts | Identical rendered messages for identical envelopes, node, and renderer version. |
+| Routing | Identical decisions if the provider is deterministic (temperature 0, seed support). |
+| Worker output | Not guaranteed by non-deterministic providers. Replay re-sends identical requests. |
+| Cost/latency | Varies with provider and hardware. |
+
+**Replay** has two modes:
+
+- **Trace replay** (default): re-execute using recorded model responses. No network. Used
+  for debugging, evaluation of scheduler/renderer changes, and auditing. If a node or
+  template changed, the runtime refuses to replay unless `--allow-ir-mismatch` is passed,
+  because the recorded responses may no longer correspond to the new prompts.
+- **Re-send replay**: execute the same requests against the providers again. Used to
+  measure provider drift. The report compares outputs and usage rather than claiming
+  equality.
+
+A **run manifest** records everything needed to distinguish these:
+
+```json
+{
+  "run_id": "run_01J9Z3K4",
+  "graph": {"id": "composed-assistant", "version": "1.0.0", "hash": "sha256:..."},
+  "ir_version": "modelgraph/ir/v0",
+  "renderer_version": "1",
+  "models": [
+    {"ref": "router-small", "version": "1.0.0", "hash": "sha256:...", "provider": "ollama", "resolved_model": "qwen2.5:1.5b-instruct"},
+    {"ref": "js-specialist-3b", "version": "0.3.0", "hash": "sha256:...", "provider": "llamacpp", "resolved_model": "js-specialist-3b-q4_k_m.gguf"}
+  ],
+  "profile": {"name": "local-8gb", "capabilities": ["cpu"], "license_allow": ["apache-2.0", "mit"]},
+  "budget": {"max_steps": 8, "max_cost_usd": 0.05, "max_total_tokens": 32000},
+  "seed": 42,
+  "started_at": "2026-10-22T10:00:00Z",
+  "finished_at": "2026-10-22T10:00:07Z",
+  "outcome": "succeeded",
+  "usage": {"steps": 3, "input_tokens": 2011, "output_tokens": 842, "cost_usd": 0.0}
+}
+```
+
+## 6. Pruning and lazy loading
+
+The authored graph is an inventory of capability, not a deployment. A **profile** describes
+what the current machine or policy can run:
+
+```yaml
+name: local-8gb
+network: loopback            # none | loopback | internet
+gpu: true
+max_vram_gb: 8
+providers: [ollama, llamacpp]
+licenses: [apache-2.0, mit]
+max_cost_usd: 0.0
+budget_overrides: {max_steps: 8}
+```
+
+The pruner runs after validation and before compilation:
+
+1. Resolve every node's model manifest.
+2. Mark a node unsupported if its provider is unavailable, its resource requirements exceed
+   the profile, its license is not allowed, or its `network_access` exceeds the profile's
+   `network` ceiling (`none` < `loopback` < `internet`).
+3. Remove unsupported nodes and all edges incident to them.
+4. Remove nodes and edges that can no longer reach an exit artifact from the entry.
+5. If the entry is removed, fail with `MG-1005` and a list of causes.
+6. For each surviving router, filter its menu to surviving targets (with at least one route
+   per router; otherwise remove the router's branch).
+7. Return a `PruneReport`:
+
+```json
+{
+  "profile": "local-8gb",
+  "removed_nodes": [{"id": "python-specialist", "reason": "model requires 14GB VRAM; profile allows 8GB"}],
+  "removed_edges": [{"from": "coding-triage", "to": "python-specialist"}],
+  "removed_exit_artifacts": [],
+  "warnings": ["router coding-triage now has one route; consider bypassing it"]
+}
+```
+
+Pruning never edits the YAML and never silently changes an exit contract. If an exit
+artifact becomes unreachable, the run fails with the report rather than returning partial
+output that looks successful.
+
+**Lazy loading** is the runtime complement:
+
+- Weights are loaded on first use of a node, not at startup.
+- The runtime may unload an idle model under memory pressure (LRU), recording the event.
+- A graph with a warm cache of loaded models starts faster; cold start is reported
+  separately from model time so benchmarks are not misleading.
+- Pruned nodes are never loaded, which is where a meaningful share of the savings comes
+  from on a machine that would otherwise swap.
+
+## 7. Caching
+
+v0 supports **exact-match response caching** only. Semantic caching is deferred because it
+can silently change behavior and is hard to evaluate.
+
+Cache key:
+
+```text
+sha256(
+  node_id + graph_hash + renderer_version
+  + model_manifest_hash + resolved_model_revision
+  + canonical_messages + generation_params + seed
+)
+```
+
+Rules:
+
+- Cache entries store the response text and normalized usage, not the envelope.
+- A hit is recorded as `provider.response.cached` and charges zero cost, but the original
+  token usage is displayed in the report as avoided cost.
+- Cache is scoped by profile? No: the key already includes the model hash and messages.
+  A local profile cannot accidentally hit a hosted response because the manifest hash
+  differs.
+- Secrets and user-identifying content must not be written to a shared cache. The default
+  cache is per-user and local. A run may set `cache: off`.
+- Cache invalidation is by key, not time. There is no TTL in v0.
+
+## 8. Concurrency and streaming
+
+v0 executes a single route sequentially. That is a deliberate simplification, not an
+architectural limit.
+
+- **Fan-out/ensemble** (deferred): the scheduler can run independent branches concurrently;
+  budget accounting and trace ordering must become concurrency-safe first
+  ([T-0018](../.scratch/tickets/T-0018-fanout-ensemble.md)).
+- **Streaming** (deferred): the CLI may stream the final artifact from the last provider
+  call for UX, but intermediate nodes produce structured artifacts. A `stream: true` option
+  must not change graph semantics. See `Q-008`.
+- **Parallel subgraphs** are not allowed in v0; one front branch only.
+- **Thread/async model**: the runtime is async internally so provider calls do not block
+  the event loop, even though v0 awaits one call at a time.
+
+## 9. Observability
+
+A trace is an append-only JSONL event stream. It is the primary debugging interface and
+the source of training data.
+
+Event types:
+
+| Event | Key fields |
+| --- | --- |
+| `run.started` | run id, graph hash, profile, budget, seed |
+| `node.entered` | node, kind, depth, step, path length |
+| `render.completed` | prompt hash, message hashes, token estimate, truncated artifacts |
+| `provider.request` | provider, model, params hash, attempt |
+| `provider.response` | usage, latency, finish reason, cached, provider meta |
+| `decision.made` | decision, target, confidence, reason, threshold, tie-break |
+| `artifact.written` | name, type, hash, producer, bytes |
+| `budget.charged` | tokens, cost, elapsed, remaining |
+| `prune.applied` | profile, removed nodes/edges, warnings |
+| `node.exited` | node, duration, outcome |
+| `run.finished` / `run.failed` | outcome, usage, exit artifacts, error |
+
+Rules:
+
+- Events are timestamped with a monotonic clock and a wall-clock timestamp.
+- Content is referenced by hash; full prompts may be stored separately under `prompts/`
+  when `--save-prompts` is enabled, subject to redaction.
+- The trace never contains API keys or unredacted secrets.
+- Logging is structured; human-readable logs are a rendering of events, not a second
+  source of truth.
+- OpenTelemetry export is a later integration ([T-0030](../.scratch/tickets/T-0030-observability.md)).
+
+## 10. Failure semantics
+
+| Scenario | Result |
+| --- | --- |
+| Validation failure | No run; error list; nothing persisted except the compile report. |
+| Pruning removes the entry or an exit | No run; `PruneReport`; explicit failure. |
+| Router low confidence with `error` | Run failed; partial artifacts and decision preserved. |
+| Worker provider failure after retries | Run failed at that node; partial artifacts preserved. |
+| Budget exhausted with `fail` | Run `budget_exhausted`; no result returned; artifacts preserved. |
+| Budget exhausted with `best_effort` | Run `budget_exhausted`; artifacts written so far returned with a warning. |
+| Caller cancellation | Run `aborted`; in-flight call allowed to finish or cancelled if supported. |
+| Internal error | Run `failed`; trace flushed; error includes stack and run id. |
+
+A failed run is still valuable: it is replayable, inspectable, and can be exported as
+training data. The runtime must never delete a trace to make a failure look clean.
+
+## 11. Deferred execution features
+
+| Feature | Why deferred | Ticket / question |
+| --- | --- | --- |
+| Fan-out and ensemble joins | Needs concurrency-safe budgets, trace ordering, and a clear quality story | [T-0018](../.scratch/tickets/T-0018-fanout-ensemble.md) |
+| Semantic response cache | Behavior can change silently; needs evaluation | Backlog B-05 |
+| Tool/code execution nodes | Security and sandboxing dominate the design | `Q-004` |
+| Streaming intermediate events | UX, not semantics | `Q-008` |
+| Multi-turn conversations | Envelope history and routing state need design | `Q-009` |
+| Distributed model placement | Keep v0 single-machine; adapters are already network-capable | Backlog B-12 |
+| Recursive subgraphs | Loop guards and termination proofs are unsolved | `Q-007` |
+| Speculative execution of branches | Cost model and cache semantics need work | Backlog B-13 |

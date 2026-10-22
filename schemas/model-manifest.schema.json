@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:modelgraph:schema:model-manifest:v0",
+  "title": "Model Manifest",
+  "description": "Pins how a model is served, what it costs, what it needs, and where it came from. Version: modelgraph/v0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {"const": "modelgraph/v0"},
+    "kind": {"const": "Model"},
+    "metadata": {"$ref": "#/$defs/metadata"},
+    "spec": {"$ref": "#/$defs/spec"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$"},
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version", "description"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "version": {"$ref": "#/$defs/semver"},
+        "description": {"type": "string", "minLength": 10, "maxLength": 1000},
+        "labels": {
+          "type": "object",
+          "additionalProperties": {"type": "string", "maxLength": 200}
+        },
+        "authors": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "maxLength": 200}
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "context_window", "license"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["mock", "openai-compatible", "ollama", "llamacpp", "custom"],
+          "description": "Adapter family used to reach the model."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Provider-resolved model identifier, e.g. qwen2.5-coder:7b or a GGUF name."
+        },
+        "endpoint": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Base URL. Secrets never belong here."
+        },
+        "context_window": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 10000000
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["chat", "json_mode", "streaming", "seeded", "grammar"]
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default_temperature": {"type": "number", "minimum": 0, "maximum": 2},
+            "default_max_output_tokens": {"type": "integer", "minimum": 1},
+            "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 600}
+          }
+        },
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pricing"],
+          "properties": {
+            "pricing": {
+              "type": "string",
+              "enum": ["per_token", "per_request", "free", "unknown"]
+            },
+            "input_per_million_usd": {"type": "number", "minimum": 0},
+            "output_per_million_usd": {"type": "number", "minimum": 0},
+            "per_request_usd": {"type": "number", "minimum": 0},
+            "notes": {"type": "string", "maxLength": 500}
+          }
+        },
+        "latency_ms": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "p50": {"type": "number", "minimum": 0},
+            "p95": {"type": "number", "minimum": 0}
+          }
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vram_gb": {"type": "number", "minimum": 0},
+            "ram_gb": {"type": "number", "minimum": 0},
+            "disk_gb": {"type": "number", "minimum": 0},
+            "cpu_only": {"type": "boolean"},
+            "network_access": {
+              "type": "string",
+              "enum": ["none", "loopback", "internet"],
+              "description": "none = in-process, loopback = local server, internet = remote provider."
+            }
+          }
+        },
+        "license": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 100},
+            "url": {"type": "string", "maxLength": 500},
+            "weights_uri": {"type": "string", "maxLength": 1000},
+            "commercial_use": {"type": "boolean"},
+            "redistribution": {"type": "boolean"},
+            "notes": {"type": "string", "maxLength": 500}
+          }
+        },
+        "integrity": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sha256": {
+              "type": ["string", "null"],
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "revision": {"type": "string", "maxLength": 200},
+            "verified_at": {"type": "string", "maxLength": 50}
+          }
+        },
+        "eval": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "suite": {"type": "string", "maxLength": 200},
+            "report": {"type": "string", "maxLength": 500},
+            "score": {"type": "number"},
+            "measured_at": {"type": "string", "maxLength": 50},
+            "notes": {"type": "string", "maxLength": 500}
+          }
+        },
+        "notes": {"type": "string", "maxLength": 2000}
+      }
+    }
+  }
+}

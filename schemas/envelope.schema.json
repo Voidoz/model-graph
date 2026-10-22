@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:modelgraph:schema:envelope:v0",
+  "title": "Envelope",
+  "description": "Request-scoped runtime state for a Model Graph run. Models never receive this raw; they receive a scoped render. Version: modelgraph/v0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "run", "request", "inputs", "artifacts"],
+  "properties": {
+    "schema": {"const": "modelgraph/envelope/v0"},
+    "run": {"$ref": "#/$defs/run"},
+    "request": {"$ref": "#/$defs/request"},
+    "inputs": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/artifact"}
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/artifact"}
+    },
+    "notes": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/note"}
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "artifactType": {
+      "type": "string",
+      "enum": ["text", "code", "patch", "plan", "json", "report"]
+    },
+    "artifactName": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+    "nodeId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,62}$"},
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "hash"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "version": {"type": "string", "minLength": 1, "maxLength": 64},
+        "hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "pathEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node", "kind"],
+      "properties": {
+        "node": {"$ref": "#/$defs/nodeId"},
+        "kind": {"type": "string", "enum": ["router", "worker", "joiner", "subgraph"]},
+        "decision": {"type": "string", "enum": ["route", "abstain"]},
+        "to": {"$ref": "#/$defs/nodeId"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "reason": {"type": "string", "maxLength": 500},
+        "graph": {"type": "string", "maxLength": 200},
+        "graph_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_steps", "used_steps", "max_depth"],
+      "properties": {
+        "max_steps": {"type": "integer", "minimum": 1},
+        "used_steps": {"type": "integer", "minimum": 0},
+        "max_depth": {"type": "integer", "minimum": 0},
+        "max_total_tokens": {"type": "integer", "minimum": 1},
+        "used_tokens": {"type": "integer", "minimum": 0},
+        "max_cost_usd": {"type": "number", "minimum": 0},
+        "used_cost_usd": {"type": "number", "minimum": 0},
+        "max_wall_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "elapsed_seconds": {"type": "number", "minimum": 0},
+        "on_budget_exhausted": {
+          "type": "string",
+          "enum": ["fail", "best_effort"]
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "graph", "depth", "step", "path", "budget", "started_at"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 100},
+        "graph": {"$ref": "#/$defs/graph"},
+        "parent_run_id": {"type": ["string", "null"], "maxLength": 100},
+        "depth": {"type": "integer", "minimum": 0},
+        "step": {"type": "integer", "minimum": 0},
+        "path": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/pathEntry"}
+        },
+        "budget": {"$ref": "#/$defs/budget"},
+        "started_at": {"type": "string", "minLength": 1, "maxLength": 50},
+        "seed": {"type": ["integer", "null"]}
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task"],
+      "properties": {
+        "task": {"type": "string", "minLength": 1, "maxLength": 200000},
+        "locale": {"type": "string", "minLength": 2, "maxLength": 35},
+        "constraints": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "output_format": {"type": "string", "maxLength": 100},
+            "max_output_tokens": {"type": "integer", "minimum": 1},
+            "max_words": {"type": "integer", "minimum": 1},
+            "style": {"type": "string", "maxLength": 200}
+          }
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "content", "producer", "created_at"],
+      "properties": {
+        "name": {"$ref": "#/$defs/artifactName"},
+        "type": {"$ref": "#/$defs/artifactType"},
+        "media_type": {"type": "string", "maxLength": 100},
+        "content": {"type": "string", "maxLength": 5000000},
+        "producer": {"type": "string", "minLength": 1, "maxLength": 100},
+        "created_at": {"type": "string", "minLength": 1, "maxLength": 50},
+        "hash": {"$ref": "#/$defs/hash"},
+        "metadata": {"type": "object", "additionalProperties": true}
+      }
+    },
+    "note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer", "content"],
+      "properties": {
+        "producer": {"type": "string", "minLength": 1, "maxLength": 100},
+        "content": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "created_at": {"type": "string", "maxLength": 50}
+      }
+    }
+  }
+}
