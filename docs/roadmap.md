@@ -161,6 +161,37 @@ The first release is real when all of the following are true:
 6. The security baseline is met and the open questions that block a public release (license,
    contribution terms, privacy) are resolved.
 
+## Phase 5 — Resident execution (post-v0)
+
+**Goal:** remove avoidable runtime overhead and make a configured graph feel like one
+GPU-resident system, without changing logical semantics.
+
+This phase is deliberately after usable v0. It must not delay M1–M4, and it does not change
+the graph, artifact, budget, or trace contracts. The design and limits are in
+[gpu-execution.md](gpu-execution.md) and [ADR-0011](adr/0011-gpu-resident-backends.md).
+
+| Ticket | Deliverable |
+| --- | --- |
+| [T-0031](../.scratch/tickets/T-0031-resident-backend.md) | `ExecutionBackend` contract + resident heterogeneous spike (B1) |
+| [T-0032](../.scratch/tickets/T-0032-fused-multilora.md) | Fused same-base multi-LoRA backend (B2) |
+| [T-0033](../.scratch/tickets/T-0033-transition-benchmark.md) | Transition benchmark, parity checks, and performance gates |
+
+**Exit criteria**
+
+- A 3-node heterogeneous graph runs with all models resident, zero weight reloads, and no
+  HTTP between nodes.
+- A shared-base graph runs with at least two adapters, token-native handoff, and artifacts
+  logically identical to the portable backend.
+- The benchmark reports TTFT, ITL, transition latency, overhead ratio, VRAM peak, and cold
+  load for B0/B1/B2 and a single-model baseline.
+- Backend admission refuses an infeasible plan with an actionable report; no silent paging.
+- The docs state clearly what still costs what: per-node prefill, routing TTFT, and the
+  base-model constraint of the fused backend.
+
+**Milestone M5 — "Resident"**: a paired report shows a measured overhead reduction over B0
+and states the remaining gap to a single-model baseline, or the phase is cancelled with
+evidence.
+
 ## Critical path
 
 ```text
@@ -171,6 +202,15 @@ T-0001 → T-0002 → T-0003 → T-0006 → T-0007 → T-0008/T-0009 → T-0010
 
 T-0004 and T-0005 run in parallel with the compiler. T-0012 can proceed once T-0010 lands.
 T-0018 (fan-out) is explicitly off the critical path and should not delay v0.
+
+Optional post-v0 performance track:
+
+```text
+T-0021 → T-0031 → T-0032 → T-0033
+```
+
+T-0031 can start after T-0013/T-0015/T-0019 even if Phase 2 is still running. It must not
+consume the capacity needed for M2/M3.
 
 ## Deliberately not scheduled
 
@@ -193,6 +233,8 @@ T-0018 (fan-out) is explicitly off the critical path and should not delay v0.
 | Before Phase 3 | Dataset consent/redaction policy | Maintainers (`Q-010`) |
 | Before a hosted mode | Trust model for untrusted graphs and models | Maintainers (`Q-003`) |
 | Before fan-out | Cost/quality justification from eval data | Maintainers |
+| Before Phase 5 | Does the measured overhead justify a resident backend, and which tier (B1/B2)? | Maintainers (T-0033) |
+| Before B2 | Is a shared base model acceptable for the target graph, given the quality trade-off? | Graph author + maintainers |
 
 ## Risk summary
 
@@ -206,6 +248,8 @@ roadmap is shaped by the top five:
 | Cost/latency stack up across hops | Budgets, pruning, exact cache, Pareto reporting |
 | Evaluation is noisy or gameable | Frozen suites, confidence intervals, hard gates, private slices |
 | Scope sprawls into an agent framework | Explicit non-goals, deferred tools/recursion, node-kind restraint |
+| GPU residency forces silent paging or OOM | Pre-load admission, explicit fallback, no reload guarantee, T-0033 matrix |
+| Fused backend locks the graph to one base model | Opt-in backend, compatibility checks, quality eval, heterogeneous B1 remains |
 
 ## How to use this roadmap when work stops
 

@@ -60,6 +60,9 @@ the language is the bus.
    (see [ADR-0008](docs/adr/0008-hard-budgets.md)).
 6. **No proof, no merge.** A node, model, or prompt change ships with a reproducible
    evaluation report. Quality, cost, and latency are reported together.
+7. **Portable by default, resident when possible.** The same graph runs over provider APIs or
+   on a GPU-resident backend without semantic changes. Performance claims require measurement
+   (see [ADR-0011](docs/adr/0011-gpu-resident-backends.md)).
 
 ## What this repository contains
 
@@ -70,6 +73,7 @@ the language is the bus.
 | [`docs/graph-model.md`](docs/graph-model.md) | Node kinds, edges, artifact types, YAML anatomy, validation rules |
 | [`docs/protocol.md`](docs/protocol.md) | Envelope, renderers, router decisions, error model |
 | [`docs/execution.md`](docs/execution.md) | Scheduler, budgets, pruning, caching, replay, observability |
+| [`docs/gpu-execution.md`](docs/gpu-execution.md) | GPU-resident and fused same-base backends, overhead accounting, limits |
 | [`docs/training.md`](docs/training.md) | Independent specialist and router training, data flywheel |
 | [`docs/evaluation.md`](docs/evaluation.md) | Metrics, suites, baselines, contribution gates |
 | [`docs/roadmap.md`](docs/roadmap.md) | Phases, milestones, sequencing, risk register summary |
@@ -85,8 +89,9 @@ the language is the bus.
 2. [`docs/architecture.md`](docs/architecture.md) — how the pieces fit.
 3. [`docs/graph-model.md`](docs/graph-model.md) and [`examples/`](examples/) — what you author.
 4. [`docs/protocol.md`](docs/protocol.md) and [`docs/execution.md`](docs/execution.md) — what runs.
-5. [`docs/training.md`](docs/training.md) and [`docs/evaluation.md`](docs/evaluation.md) — how nodes improve.
-6. [`docs/roadmap.md`](docs/roadmap.md) and [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) — what to build next.
+5. [`docs/gpu-execution.md`](docs/gpu-execution.md) — how a graph can run GPU-resident, and what that cannot fix.
+6. [`docs/training.md`](docs/training.md) and [`docs/evaluation.md`](docs/evaluation.md) — how nodes improve.
+7. [`docs/roadmap.md`](docs/roadmap.md) and [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) — what to build next.
 
 ## Working in the repository
 

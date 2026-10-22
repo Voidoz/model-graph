@@ -274,6 +274,30 @@ supports it, but the graph must not assume the model obeys.
 `application/json`, and `text/x-diff` are conventional values. The runtime records but
 does not enforce them.
 
+### 4.5 Token-native fast path
+
+A fused execution backend (B2, [gpu-execution.md](gpu-execution.md)) may keep token IDs
+on-device between nodes instead of materializing text at every hop. This is a transport
+optimization, not a new artifact type:
+
+- The logical artifact is still text with a name and type. The runtime must produce the
+  declared artifact text (or a deterministic detokenization reference) for the trace,
+  evaluation, and caller.
+- The backend may assemble the next prompt from cached token fragments and the previous
+  node's output tokens, avoiding detokenize/re-tokenize on the fast path.
+- Detokenization must be deterministic and use the same tokenizer identity recorded in the
+  model manifest. A mismatch is a hard error, not an approximation.
+- No KV cache or hidden state crosses a node boundary. KV stays inside the engine serving a
+  single base/adapter; token IDs are the only thing that moves.
+- The fast path must pass the same logical-parity suite as the portable backend under
+  scripted responses. If it cannot materialize valid UTF-8 artifact text, it must fall back
+  to the text path.
+- Traces record the backend mode and the materialized artifact hash, so a run cannot hide
+  which representation was used.
+
+See [ADR-0011](adr/0011-gpu-resident-backends.md). This does not change ADR-0001: language
+remains the contract; token IDs are its encoding.
+
 ## 5. Router protocol
 
 ### 5.1 Request

@@ -66,6 +66,7 @@ loop.
 ```python
 def run(graph, request, profile):
     ctx = Envelope.create(graph, request, profile)
+    backend = ExecutionBackend.plan_and_load(graph, profile)  # B0/B1/B2
     frontier = [Frame(node=graph.entry, path=[], depth=0)]
 
     while frontier:
@@ -77,14 +78,14 @@ def run(graph, request, profile):
 
         if node.kind == "router":
             view = render_router(ctx, node, graph, frame)
-            decision = call_router(view, node)      # includes repair/retry policy
+            decision = call_router(view, node, backend)   # repair/retry policy
             target = resolve_route(decision, node, graph)
             trace.decision(decision, target)
             frontier.append(frame.advance(target))
 
         elif node.kind == "worker":
             view = render_worker(ctx, node, frame)
-            text, usage = provider.chat(view)
+            text, usage = backend.invoke(node.id, view, node.params)
             budget.charge(usage)
             artifacts = parse_artifacts(text, node.writes)
             ctx.write(artifacts, producer=node.id)
@@ -93,13 +94,13 @@ def run(graph, request, profile):
 
         elif node.kind == "joiner":
             view = render_joiner(ctx, node, frame)
-            text, usage = provider.chat(view)
+            text, usage = backend.invoke(node.id, view, node.params)
             budget.charge(usage)
             ctx.write(parse_artifacts(text, node.writes), producer=node.id)
             frontier.extend(frame.advance(t) for t in graph.successors(node))
 
         elif node.kind == "subgraph":
-            result = run_subgraph(ctx, node, frame) # shares budget, depth + 1
+            result = run_subgraph(ctx, node, frame, backend)  # shares budget, depth + 1
             ctx.write(result.mapped_artifacts, producer=node.id)
             frontier.extend(frame.advance(t) for t in graph.successors(node))
 
@@ -115,6 +116,9 @@ Important properties of this loop:
 - **The envelope is shared, the prompt is not.** Artifacts accumulate; each render selects.
 - **Budget is checked before every call**, and charged after. A provider call cannot start
   if the remaining budget is below the node's declared minimum estimate.
+- **The backend owns model invocation, not semantics.** The portable backend (B0) wraps
+  provider adapters. A resident or fused backend (B1/B2) implements the same call contract
+  in-process and must pass logical-parity tests.
 - **One branch in v0.** If a node has multiple successors, only a fan-out-capable node
   (router with `selection: top_k`, deferred) may activate more than one. The loop's
   frontier supports it; validation prevents it until the scheduler does.
@@ -132,6 +136,26 @@ A subgraph invocation:
 
 A subgraph failure propagates as a node failure in the parent, with the child trace linked.
 The parent may have a fallback only at router level; there is no per-node catch in v0.
+
+### 2.2 Backend execution
+
+Before the walk, the runtime asks the backend to plan and load:
+
+1. **Plan.** Resolve models/adapters, check graph compatibility (especially for a fused
+   backend), estimate VRAM, and decide admission. If the plan fails, the run either falls
+   back to B0 explicitly or stops with the plan attached.
+2. **Load.** Pin weights/adapters and initialize runners. Cold load time is recorded
+   separately. A resident plan may not reload a weight after this point.
+3. **Invoke.** Executors call `backend.invoke(node_id, view, params)`. The returned text,
+   tokens, and usage are normalized identically across backends.
+4. **Measure.** The backend records transition phases (host parse, tokenize, transfer,
+   adapter switch, prefill) and exposes them as trace metrics. Prefill is reported separately
+   from transport overhead because it is model compute, not marshaling.
+5. **Close.** Release VRAM at the end of the run. Replay uses the recorded backend and plan;
+   a backend change is a run-manifest difference, not a silent substitution.
+
+Backend details and admission rules are in [gpu-execution.md](gpu-execution.md). The
+scheduler does not branch on backend mode; only the executors' call target changes.
 
 ## 3. Runtime state
 
@@ -260,6 +284,7 @@ providers: [ollama, llamacpp]
 licenses: [apache-2.0, mit]
 max_cost_usd: 0.0
 budget_overrides: {max_steps: 8}
+backend: auto                # portable | resident | fused | auto
 ```
 
 The pruner runs after validation and before compilation:
@@ -297,6 +322,27 @@ output that looks successful.
   separately from model time so benchmarks are not misleading.
 - Pruned nodes are never loaded, which is where a meaningful share of the savings comes
   from on a machine that would otherwise swap.
+
+### 6.1 Backend admission
+
+Lazy loading is the portable (B0) behavior. Resident backends invert it: they decide whether
+the whole plan fits before loading anything, then keep the active set pinned.
+
+- **Plan-time VRAM estimate.** Weights + KV budget + workspace + CUDA graphs + fragmentation
+  headroom + adapter overhead. The estimate and its inputs go into the run manifest.
+- **Admission.** If the plan does not fit, the backend may select a smaller/quantized
+  compatible manifest, prune branches (T-0015), fall back to B0, or fail. It may not silently
+  page weights or offload a model mid-run.
+- **No reloads.** Once a resident plan is loaded, a model invocation must not reload weights.
+  A reload is a performance failure and is recorded as such.
+- **Explicit fallback.** Falling back to B0 is recorded with a reason and changes the latency
+  class of the run; it is not hidden.
+- **Unload policy.** Only models outside the active resident set may be unloaded. The fused
+  backend keeps one base model plus adapters resident; evicting the base is equivalent to
+  abandoning the backend.
+
+See [gpu-execution.md](gpu-execution.md) for the backend contract, KV rules, and measurement
+plan.
 
 ## 7. Caching
 
@@ -352,6 +398,9 @@ Event types:
 | `run.started` | run id, graph hash, profile, budget, seed |
 | `node.entered` | node, kind, depth, step, path length |
 | `render.completed` | prompt hash, message hashes, token estimate, truncated artifacts |
+| `backend.plan` | mode, resolved models/adapters, VRAM estimate, admission result, fallback |
+| `backend.loaded` | cold load ms, resident models, VRAM reserved |
+| `backend.transition` | from/to node, host parse ms, tokenize ms, transfer ms, adapter switch ms, prefill ms |
 | `provider.request` | provider, model, params hash, attempt |
 | `provider.response` | usage, latency, finish reason, cached, provider meta |
 | `decision.made` | decision, target, confidence, reason, threshold, tie-break |
@@ -367,6 +416,8 @@ Rules:
 - Content is referenced by hash; full prompts may be stored separately under `prompts/`
   when `--save-prompts` is enabled, subject to redaction.
 - The trace never contains API keys or unredacted secrets.
+- Backend transition metrics are recorded per hop; prefill is a separate field from host
+  marshaling so the report does not blame transport for model compute.
 - Logging is structured; human-readable logs are a rendering of events, not a second
   source of truth.
 - OpenTelemetry export is a later integration ([T-0030](../.scratch/tickets/T-0030-observability.md)).
@@ -392,10 +443,11 @@ training data. The runtime must never delete a trace to make a failure look clea
 | Feature | Why deferred | Ticket / question |
 | --- | --- | --- |
 | Fan-out and ensemble joins | Needs concurrency-safe budgets, trace ordering, and a clear quality story | [T-0018](../.scratch/tickets/T-0018-fanout-ensemble.md) |
-| Semantic response cache | Behavior can change silently; needs evaluation | Backlog B-05 |
+| Semantic response cache | Behavior can change silently; needs evaluation | Backlog B-01 |
 | Tool/code execution nodes | Security and sandboxing dominate the design | `Q-004` |
 | Streaming intermediate events | UX, not semantics | `Q-008` |
 | Multi-turn conversations | Envelope history and routing state need design | `Q-009` |
-| Distributed model placement | Keep v0 single-machine; adapters are already network-capable | Backlog B-12 |
+| Distributed model placement | Keep v0 single-machine; adapters are already network-capable | Backlog B-09 |
+| GPU-resident execution backends | Post-v0 performance track; v0 uses the portable backend | [T-0031](../.scratch/tickets/T-0031-resident-backend.md) |
 | Recursive subgraphs | Loop guards and termination proofs are unsolved | `Q-007` |
-| Speculative execution of branches | Cost model and cache semantics need work | Backlog B-13 |
+| Speculative execution of branches | Cost model and cache semantics need work | Backlog B-02 |

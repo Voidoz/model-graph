@@ -17,6 +17,17 @@ with an ADR, the ADR wins; fix the glossary.
 | **Distillation** | Training a smaller specialist on filtered outputs of a larger teacher model. |
 | **E2E (end-to-end)** | Evaluation of a complete graph on real tasks, including routing and handoffs. |
 | **Envelope** | The request-scoped runtime state: run metadata, request, inputs, artifacts, notes, and budget. Never shown raw to a model. |
+| **Execution backend** | The component that owns model residency and invocation: portable provider calls (B0), resident heterogeneous models (B1), or fused same-base adapters (B2). It does not make routing decisions. |
+| **Admission control** | The pre-load check that a graph's weights, KV cache, workspace, and adapter overhead fit the profile's VRAM. Failure is explicit, never silent paging. |
+| **Cold load time** | Time to load weights/adapters before a run's first model call, reported separately from model time. |
+| **Fused backend (B2)** | A GPU-resident backend using one base model, one tokenizer, and per-node LoRA adapters. Token IDs may stay on-device; artifacts are still materialized as language. |
+| **Logical parity** | The requirement that a backend produce the same routing decisions and artifact text as the reference backend under scripted responses. |
+| **Multi-LoRA** | Serving multiple low-rank adapters over one resident base model, switching adapters per request or node. |
+| **Prefix cache** | Cached KV/state for a shared token prefix, keyed by base, adapter, and token sequence. It cannot be shared across different models or adapters. |
+| **Resident backend (B1)** | A GPU-resident backend that pins all models used by a graph in VRAM and invokes them in-process, bridging different tokenizers with text. |
+| **Runtime overhead ratio** | Non-model wall time (transport, tokenization, scheduling) divided by total wall time. |
+| **Token-native** | An internal fast path that passes token IDs between compatible nodes without detokenizing and re-tokenizing; the logical artifact is still text. |
+| **Transition latency** | Time from the last token of one node to the first prefill token of the next, split into host, transfer, adapter-switch, and prefill components. |
 | **Exit artifact** | An artifact named in `spec.exit` that is returned to the caller. |
 | **Fallback** | A node invoked when a router abstains or falls below its confidence threshold. Declared once per graph in v0. |
 | **Fan-out** | Routing one request to multiple children and joining their results. Designed, not executed in v0. |
@@ -44,6 +55,7 @@ with an ADR, the ADR wins; fix the glossary.
 | **Specialist** | A worker model trained or prompted for a narrow domain. |
 | **Subgraph** | A graph invoked as a node, with explicit input/output mappings. |
 | **Suite** | A versioned set of evaluation cases, a metric, and thresholds. |
+| **Time to first token (TTFT)** | Request start to the first output token; includes routing latency and is the metric most affected by an extra decider hop. |
 | **Trace** | The append-only event log of a run: node entries, renders, provider calls, decisions, artifacts, budgets, and outcome. |
 | **Ticket** | A unit of work in `.scratch/tickets/` with a stable ID, scope, acceptance criteria, and test plan. |
 | **Validity** | The fraction of outputs that satisfy the node's artifact contract, independent of quality. |

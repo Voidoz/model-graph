@@ -23,7 +23,7 @@
       "type": "string",
       "enum": ["todo", "ready", "in-progress", "blocked", "review", "done", "dropped"]
     },
-    "phase": {"type": "integer", "minimum": 0, "maximum": 4},
+    "phase": {"type": "integer", "minimum": 0, "maximum": 5},
     "area": {
       "type": "string",
       "enum": [

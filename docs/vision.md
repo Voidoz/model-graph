@@ -83,6 +83,7 @@ large investments.
 | H2 | Routing can be learned accurately enough from system traces. | ≥90% agreement with oracle routing on separable domains. | Confusion between domains stays high, or abstain rate makes the router useless. |
 | H3 | Capability-aware pruning produces real savings without surprising quality loss. | ≥30% cost reduction for a fixed deployment profile at parity. | Pruned graphs fail on tasks users actually send, not just benchmark tasks. |
 | H4 | Independent contributors can improve nodes on consumer hardware. | A 24GB-GPU LoRA improvement of ≥5 points on a node suite that survives end-to-end gating. | Gains vanish out-of-distribution, or eval gating cannot detect regressions. |
+| H5 | A GPU-resident backend removes most non-model overhead, and a shared-base adapter graph approaches single-model latency. | B1 transition p95 <15ms excluding prefill; B2 <5ms and TTFT within 1.25× of a single-model baseline; zero weight reloads. | VRAM or prefill dominates, the fused base constrains quality, or the measured gain over portable execution is negligible. |
 
 **Kill criteria.** If, across three different domains, oracle routing beats the best
 single model by less than 5 quality points at equal cost, the cost-reduction thesis is
@@ -131,8 +132,13 @@ how we limit its loss.
 - **Not a new foundation model.** It composes existing ones.
 - **Not an agent framework with arbitrary tool loops.** v0 graphs are acyclic and
   text-only. Tools and code execution are deliberately deferred (see `Q-004`).
-- **Not a latent-space architecture.** No hidden-state sharing, KV-cache reuse, or
-  cross-model gradient flow. See [ADR-0001](adr/0001-language-as-the-wire.md).
+- **Not a latent-space architecture.** No hidden-state sharing or cross-model KV-cache
+  reuse, and no cross-model gradient flow. Prefix caching within one model/adapter set is an
+  optimization, not latent communication. See [ADR-0001](adr/0001-language-as-the-wire.md).
+- **Not one forward pass.** GPU-resident backends remove transport, reload, and
+  re-tokenization overhead, but every node still performs its own prefill. "Runs like a single
+  model" is a measured performance target, not a structural identity
+  ([gpu-execution.md](gpu-execution.md)).
 - **Not a guarantee of lower cost.** Routing can be wrong and handoffs can be expensive.
   The evaluation plan exists to measure when composition wins and when it does not.
 - **Not a marketplace (yet).** The registry is local-first; payments and hosted serving

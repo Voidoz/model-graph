@@ -192,6 +192,24 @@ for it. Remove the branch; one less node is a feature.
 For v0, provide LoRA/QLoRA SFT and offline distillation. Preference tuning is a later
 recipe, not a requirement.
 
+### 5.1.1 Adapters as a fused deployment path
+
+A LoRA adapter is not only a training convenience; it is the key to GPU-resident
+composition. If a set of specialists share one base model and one tokenizer, they can be
+served as adapters in a single engine, with the base weights loaded once and the graph's
+handoffs kept on-device ([gpu-execution.md](gpu-execution.md), [ADR-0011](adr/0011-gpu-resident-backends.md)).
+
+This introduces a trade-off the model card must state:
+
+- **Benefit:** one resident base, low transition overhead, one KV pool, a realistic
+  "single model feel."
+- **Cost:** every node is constrained to the same base model; a best-in-class external model
+  cannot join the fused backend; adapter rank and training data limit specialization.
+
+B2 (T-0032) extends the manifest to describe an adapter; the training kit (T-0025) should
+produce adapter artifacts that B2 can consume directly. The shared base is a deployment
+choice, not a requirement of the graph contract.
+
 ### 5.2 Distillation
 
 Distillation is the most direct expression of the project's thesis: use a large model to

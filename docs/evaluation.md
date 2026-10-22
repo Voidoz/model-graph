@@ -53,6 +53,12 @@ routing or handoff is the problem. Evaluation reports always state the level.
 | **Input tokens / output tokens** | Summed from normalized provider usage. |
 | **Cost per task** | Estimated from manifest prices; report local compute separately. |
 | **Wall latency p50 / p95** | End-to-end; model time and runtime overhead split. |
+| **Time to first token (TTFT)** | Request start to first output token; routing latency is visible here. |
+| **Inter-token latency (ITL)** | Steady-state decode time per output token. |
+| **Transition latency** | Last token of node A to first prefill token of node B, split into host, transfer, adapter switch, and prefill. |
+| **Runtime overhead ratio** | Non-model wall time divided by total wall time. |
+| **GPU idle ratio** | Fraction of wall time with no kernel executing (best effort). |
+| **VRAM peak / cold load** | Peak memory and startup cost of a resident backend. |
 | **Hop count** | Node invocations per task. |
 | **Cache savings** | Tokens/cost avoided by exact-match cache hits. |
 | **Prune ratio** | Fraction of nodes/edges removed by a profile. |
@@ -219,6 +225,7 @@ release.
 | Prompt/template change | Node suite + replay comparison | No e2e drop >2 points; behavior diff reviewed |
 | Graph topology change | Graph suite + all node suites | No drop >2 points; cost/latency reported |
 | New provider adapter | Contract tests + one graph e2e | 100% contract pass; no quality drop >2 points |
+| New execution backend | Logical-parity suite + transition benchmark | Decisions/artifacts identical under scripted responses; overhead gates in T-0033 met; fallback explicit |
 | Dataset or eval change | Provenance + contamination check | Suite version bump; both versions reported |
 | Dependency update | Full CI + one e2e suite | No quality drop >2 points; security check |
 
@@ -235,6 +242,11 @@ Some things cannot be traded away:
 - **Safety**: zero safety violations in the safety suite for a release.
 - **Security**: no secrets in traces or prompts (automated scan).
 - **Budget**: no run exceeds its declared budget.
+- **Backend parity**: a backend must produce the declared artifact text and routing
+  decisions under scripted responses, and must not silently fall back or page weights.
+
+Backend performance is reported separately from quality. A faster backend does not excuse a
+quality regression, and a quality gain does not excuse a silent latency-class change.
 
 ## 7. Statistical discipline
 

@@ -43,6 +43,12 @@ flowchart TB
     T[Trace recorder]
   end
 
+  subgraph Backends["Execution backends"]
+    B0[Portable provider backend]
+    B1[Resident heterogeneous]
+    B2[Fused same-base multi-LoRA]
+  end
+
   subgraph Providers["Provider adapters"]
     OA[OpenAI-compatible]
     OL[Ollama]
@@ -66,7 +72,10 @@ flowchart TB
   S --> J --> ENV
   S --> SG --> S
   R & W & J --> T
-  R & W & J --> Providers
+  R & W & J --> Backends
+  B0 --> Providers
+  B1 --> L
+  B2 --> L
   Providers --> Models
   E --> T
   T --> EV[Evaluation and training pipelines]
@@ -74,8 +83,8 @@ flowchart TB
 ```
 
 The architecture is deliberately boring: a compiler, a scheduler, a small set of node
-executors, and provider adapters. The novelty is in the contracts, not in exotic
-machinery.
+executors, and execution backends over provider adapters or in-process runners. The novelty
+is in the contracts, not in exotic machinery.
 
 ## 2. Layers and components
 
@@ -110,19 +119,31 @@ be reproduced from the IR plus pinned manifests.
 - **Envelope** is the request-scoped state: inputs, artifacts, budget, path, and
   provenance. It is *not* the full prompt; each node gets a scoped render of it.
 - **Executors** are separate for router, worker, joiner, and subgraph because their
-  contracts differ. They share the provider call path, budget accounting, and tracing.
+  contracts differ. They share the execution-backend call path, budget accounting, and
+  tracing.
 - **Trace recorder** writes append-only events with content-addressed artifacts. Replay
   consumes the trace, not the network.
 - **Budget accountant** owns steps, depth, tokens, cost, and wall time. It can veto a
   call before it is made.
 
-### 2.4 Provider layer
+### 2.4 Execution backends and providers
 
-A provider adapter translates a normalized chat request into a vendor-specific call and
-normalizes the response, usage, and errors. Adapters do not know about graphs, routing,
-or envelopes. The same adapter can serve many nodes.
+An **execution backend** owns model residency and invocation. It sits between the executors
+and the model runners, and it never makes routing decisions or parses artifacts.
 
-Required adapter surface for v0:
+| Backend | What it does | Default? |
+| --- | --- | --- |
+| **B0 — portable** | Wraps provider adapters (HTTP or local subprocess). One model call at a time per branch; text handoffs; maximum portability. | Yes |
+| **B1 — resident heterogeneous** | Loads all models in the graph in one process and pins them in VRAM; in-process calls; text bridge between tokenizers; per-model prefix cache. | Opt-in |
+| **B2 — fused same-base multi-LoRA** | One resident base model, one tokenizer, per-node adapters; token IDs stay on-device; adapter switch per node. | Opt-in |
+
+Backend selection is part of the run profile and is recorded in the run manifest. The compiler
+checks model/tokenizer compatibility and VRAM admission. If the plan does not fit, the runtime
+fails with a report or falls back to B0 explicitly; it never pages weights silently. All
+backends must pass a logical-parity conformance suite: same decisions, artifact text, budgets,
+and replay behavior.
+
+B0 still uses the provider adapter contract:
 
 ```text
 capabilities() -> {chat, json_mode, streaming, max_context, cost_model}
@@ -131,6 +152,8 @@ health()        -> {ok, model_loaded, detail}
 ```
 
 The adapter contract is specified in [protocol.md](protocol.md#9-provider-adapter-contract).
+The backend contract, cost model, and limits are in
+[gpu-execution.md](gpu-execution.md) and [ADR-0011](adr/0011-gpu-resident-backends.md).
 
 ### 2.5 Model registry
 
@@ -309,6 +332,7 @@ Rules:
 | **Library** | Python API | Embedding in training/eval scripts and notebooks | v0 target |
 | **CLI** | `mg validate`, `mg run`, `mg eval`, `mg replay` | Local authoring, CI, scripts | v0 target |
 | **Local daemon** | HTTP/OpenAI-compatible facade | Apps talk to a graph as if it were a model | v0.2 target |
+| **Resident GPU runtime** | CLI/library with `--backend resident|fused` | Low-overhead local execution on one GPU | Phase 5 ([T-0031](../.scratch/tickets/T-0031-resident-backend.md)) |
 | **Visual inspector** | Read-only web UI over traces and graphs | Debugging, teaching, review | Spike ([T-0028](../.scratch/tickets/T-0028-visual-inspector.md)) |
 | **Hosted** | Multi-tenant service, registry, marketplace | Out of scope for v0 | Not planned yet |
 
@@ -320,6 +344,7 @@ semantics that the reference runtime lacks.
 | Extension | Supported in v0? | Mechanism | Guardrail |
 | --- | --- | --- | --- |
 | New provider | Yes | Adapter contract; one class + config | Must normalize usage/errors; no graph awareness |
+| New execution backend | Phase 5 | `ExecutionBackend` contract | Logical parity, VRAM admission, explicit fallback |
 | New model | Yes | Model manifest + registry | License, resources, hash declared |
 | New graph | Yes | YAML | Static validation + eval |
 | New node kind | No | Would require ADR | Node kinds are semantic, not plugins |
@@ -337,9 +362,10 @@ for independent contributors to target than a plugin free-for-all.
 | **Auditability** | Every routing decision and rendered prompt reconstructable from a trace. | Trace schema, prompt hashes, run manifest. |
 | **Reproducibility** | Same graph + manifests + seed → same request sequence, comparable outputs. | Version pinning, deterministic ordering, replay. |
 | **Safety** | Budgets cannot be silently exceeded; untrusted content is delimited and never treated as instructions. | Budget veto, renderer rules, threat model. |
-| **Portability** | Graph runs against at least two providers without edits. | Provider-neutral contracts, mock + local + remote adapters. |
+| **Portability** | Graph runs against at least two providers and the portable backend without edits. | Provider-neutral contracts, mock + local + remote adapters. |
+| **Backend parity** | A GPU-resident backend produces the same decisions and artifacts as the portable backend under scripted responses. | Conformance suite, explicit backend selection, run-manifest recording. |
 | **Extensibility** | Adding a specialist requires no runtime code. | Manifest + node + edge. |
-| **Performance** | Runtime overhead (excluding model time) < 5% of end-to-end latency. | Lazy loading, no redundant serialization. |
+| **Performance** | Runtime overhead is measured and reported; resident backends aim to remove HTTP, reloads, and re-tokenization, but never claim "single model" without a paired benchmark. | In-process execution, prefix caching, T-0033 measurement. |
 | **Privacy** | Runs can be executed with local-only adapters and no trace upload. | Local-first, explicit redaction, no telemetry by default. |
 
 ## 10. Decision index
@@ -356,6 +382,7 @@ for independent contributors to target than a plugin free-for-all.
 | [0008](adr/0008-hard-budgets.md) | Hard budgets and loop guards by default. | Accepted |
 | [0009](adr/0009-local-first-provider-neutral.md) | Local-first, provider-neutral model binding. | Accepted |
 | [0010](adr/0010-evaluation-gated-contributions.md) | Evaluation-gated contributions and per-node ownership. | Accepted |
+| [0011](adr/0011-gpu-resident-backends.md) | GPU-resident execution as an optional backend; logical semantics unchanged. | Accepted |
 
 Open questions that would change this architecture are tracked in
 [`../.scratch/ideas/open-questions.md`](../.scratch/ideas/open-questions.md).

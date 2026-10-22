@@ -20,6 +20,7 @@ considered**, **Follow-ups**.
 | [0008](0008-hard-budgets.md) | Hard budgets and loop guards by default | Accepted | 2026-10-22 |
 | [0009](0009-local-first-provider-neutral.md) | Local-first, provider-neutral model binding | Accepted | 2026-10-22 |
 | [0010](0010-evaluation-gated-contributions.md) | Evaluation-gated contributions and per-node ownership | Accepted | 2026-10-22 |
+| [0011](0011-gpu-resident-backends.md) | GPU-resident execution as an optional backend | Accepted | 2026-10-22 |
 
 ## Proposed or open
 
