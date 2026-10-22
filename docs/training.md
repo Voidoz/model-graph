@@ -252,7 +252,8 @@ This is the B4 deployment target ([performance.md](performance.md#58-b4-distille
   the source graph.
 
 Use it only for stable, high-volume paths where a single model is the right runtime shape. The
-graph remains the authoring, evaluation, and customization layer.
+graph remains the authoring, evaluation, and customization layer. Promotion and staleness follow
+the revision workflow in [iteration.md](iteration.md).
 
 ### 5.4 Training loop and gates
 

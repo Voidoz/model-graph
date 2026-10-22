@@ -69,6 +69,8 @@ A user should be able to:
    whether it improves a target node without regressing the end-to-end suite.
 6. Compile a graph to a fused or distilled deployment target and compare it with a
    quality-matched dense LLM on TTFT, throughput, cost, and VRAM.
+7. Swap a node's model or adapter, see the impact and eval delta, promote it atomically, and
+   roll back without editing the running revision.
 
 The project-level north-star metric is **quality per dollar at matched task difficulty**.
 Secondary metrics: task success, TTFT, p95 latency, throughput, routing accuracy, prune ratio,

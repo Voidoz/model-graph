@@ -22,6 +22,7 @@ considered**, **Follow-ups**.
 | [0010](0010-evaluation-gated-contributions.md) | Evaluation-gated contributions and per-node ownership | Accepted | 2026-10-22 |
 | [0011](0011-gpu-resident-backends.md) | GPU-resident execution as an optional backend | Accepted | 2026-10-22 |
 | [0012](0012-compiled-deployment-targets.md) | Graphs compile to deployment targets, including a distilled single model | Accepted | 2026-10-22 |
+| [0013](0013-immutable-deployment-revisions.md) | Swaps are immutable deployment revisions with explicit invalidation | Accepted | 2026-10-22 |
 
 ## Proposed or open
 

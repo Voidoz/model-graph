@@ -21,6 +21,15 @@ with an ADR, the ADR wins; fix the glossary.
 | **Admission control** | The pre-load check that a graph's weights, KV cache, workspace, and adapter overhead fit the profile's VRAM. Failure is explicit, never silent paging. |
 | **AOT (ahead-of-time) plan** | A compiled execution plan containing tokenized static prompts, prefix KV caches, routing/compiler decisions, memory layout, and hashes. It is a cache, not a new source of truth. |
 | **Compiled target** | A deployment artifact produced from a graph: resident, fused, compiled-fused, or distilled. The graph remains the authoritative source. |
+| **Candidate** | A proposed change (graph edit, model/adapter swap, prompt) with evidence, not yet the active revision. |
+| **Canary** | Serving a small fraction of traffic on a candidate revision while comparing quality proxies, errors, latency, and cost. |
+| **Change set** | A proposed diff plus candidate bindings and evaluation evidence; the unit of iteration. |
+| **Deployment revision** | Immutable hash of graph, models/adapters, target, plan/student, and compiler version. The unit of promotion and rollback. |
+| **Hot / warm / cold swap** | Whether both revisions fit and switch atomically, overlap while one drains, or require downtime/drain. |
+| **Impact analysis** | Pre-build report of compatibility, affected nodes/routes, invalidated plans/caches/students, VRAM delta, eval coverage, and rollback. |
+| **In-flight pinning** | A request or session keeps the deployment revision it started on; new requests use the new revision. |
+| **Promotion** | Atomic switch of the active deployment revision after evidence gates. Rollback is a pointer switch back. |
+| **Stale artifact** | A plan, prefix cache, route cache, or distilled student whose source hash no longer matches; it must not be silently reused. |
 | **Continuous batching** | Scheduling new requests into an active model batch as slots free up, instead of processing one request to completion. Required for throughput parity. |
 | **Distilled target (B4)** | A single student model trained to imitate a graph's behavior on a target distribution. It removes runtime routing/prefill at the cost of runtime modularity and rare-route quality. |
 | **Fast router** | A classifier, embedding model, or linear head that produces the structured routing decision at millisecond scale instead of a generative router call. |

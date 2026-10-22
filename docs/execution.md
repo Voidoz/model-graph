@@ -251,11 +251,14 @@ Determinism is a spectrum. The runtime is explicit about what it can guarantee.
   measure provider drift. The report compares outputs and usage rather than claiming
   equality.
 
-A **run manifest** records everything needed to distinguish these:
+A **run manifest** records everything needed to distinguish these, including the
+immutable deployment revision that served the request:
 
 ```json
 {
   "run_id": "run_01J9Z3K4",
+  "deployment_revision": "rev_01J9Z3K4",
+  "target": "fused",
   "graph": {"id": "composed-assistant", "version": "1.0.0", "hash": "sha256:..."},
   "ir_version": "modelgraph/ir/v0",
   "renderer_version": "1",

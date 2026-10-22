@@ -431,6 +431,11 @@ If after this the compiled graph still loses to a dense model on latency and thr
 matched quality for the target workloads, the correct claim is "a modular alternative with
 better ownership and cost," not "faster than an LLM." The benchmark decides.
 
+Performance work is only useful if the resulting system can be changed safely. The iteration
+and swap lifecycle — change sets, impact analysis, immutable deployment revisions, hot adapter
+swaps, canary, and rollback — is defined in [iteration.md](iteration.md) and
+[ADR-0013](adr/0013-immutable-deployment-revisions.md).
+
 ## 11. Risks and falsification
 
 | Risk | Consequence | Mitigation |

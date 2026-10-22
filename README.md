@@ -76,6 +76,7 @@ the language is the bus.
 | [`docs/execution.md`](docs/execution.md) | Scheduler, budgets, pruning, caching, replay, observability |
 | [`docs/gpu-execution.md`](docs/gpu-execution.md) | GPU-resident and fused same-base backends, overhead accounting, limits |
 | [`docs/performance.md`](docs/performance.md) | LLM-parity analysis, options compared, overhead budget, compilation targets |
+| [`docs/iteration.md`](docs/iteration.md) | Iteration loops, swap impact, atomic revisions, canary/rollback |
 | [`docs/training.md`](docs/training.md) | Independent specialist and router training, data flywheel |
 | [`docs/evaluation.md`](docs/evaluation.md) | Metrics, suites, baselines, contribution gates |
 | [`docs/roadmap.md`](docs/roadmap.md) | Phases, milestones, sequencing, risk register summary |
@@ -93,8 +94,9 @@ the language is the bus.
 4. [`docs/protocol.md`](docs/protocol.md) and [`docs/execution.md`](docs/execution.md) — what runs.
 5. [`docs/gpu-execution.md`](docs/gpu-execution.md) — how a graph can run GPU-resident, and what that cannot fix.
 6. [`docs/performance.md`](docs/performance.md) — how the graph compares to an LLM, what to compile, and what parity requires.
-7. [`docs/training.md`](docs/training.md) and [`docs/evaluation.md`](docs/evaluation.md) — how nodes improve.
-8. [`docs/roadmap.md`](docs/roadmap.md) and [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) — what to build next.
+7. [`docs/iteration.md`](docs/iteration.md) — how a user swaps models safely while building a workflow.
+8. [`docs/training.md`](docs/training.md) and [`docs/evaluation.md`](docs/evaluation.md) — how nodes improve.
+9. [`docs/roadmap.md`](docs/roadmap.md) and [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) — what to build next.
 
 ## Working in the repository
 

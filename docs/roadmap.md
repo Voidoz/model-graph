@@ -135,6 +135,8 @@ node, executed once on real hardware.
 | [T-0028](../.scratch/tickets/T-0028-visual-inspector.md) | Read-only graph/trace inspector spike |
 | [T-0029](../.scratch/tickets/T-0029-security-hardening.md) | Injection defenses, redaction, untrusted-node policy |
 | [T-0030](../.scratch/tickets/T-0030-observability.md) | Structured logs, metrics, OpenTelemetry export |
+| [T-0038](../.scratch/tickets/T-0038-change-sets-swaps.md) | Change sets, impact analysis, atomic revisions, rollback (v0.1) |
+| [T-0040](../.scratch/tickets/T-0040-iteration-ux.md) | Watch mode, diff/compare, impact panel, stale badges (v0.1) |
 
 **Exit criteria**
 
@@ -144,7 +146,7 @@ node, executed once on real hardware.
   content, budget enforcement, dependency audit.
 - `mg run` emits structured events suitable for external monitoring.
 
-**Milestone M4 — "Usable v0"**.
+**Milestone M4 — "Usable v0"**. T-0038/T-0040 are the v0.1 iteration track; they improve model swapping but are not required for M4.
 
 ## Definition of usable v0
 
@@ -182,6 +184,7 @@ artifact, budget, and trace contracts do not change. The analysis is in
 | [T-0035](../.scratch/tickets/T-0035-fast-routing.md) | Classifier/head routing, cascade flattening, route cache |
 | [T-0036](../.scratch/tickets/T-0036-batched-scheduler.md) | Multi-request scheduler and continuous batching |
 | [T-0037](../.scratch/tickets/T-0037-graph-distillation.md) | Single-model distilled deployment target (B4) |
+| [T-0039](../.scratch/tickets/T-0039-canary-hot-swap.md) | Canary/shadow, in-flight pinning, hot swap/drain, rollback |
 
 **Exit criteria**
 
@@ -197,6 +200,8 @@ artifact, budget, and trace contracts do not change. The analysis is in
   transition phases for B0/B1/B2 and dense/MoE/cascade baselines at matched quality.
 - A distilled student is evaluated against the graph; it is promoted only if quality holds,
   and its staleness/re-distillation policy is documented.
+- A model/adapter swap can be staged, promoted, and rolled back without changing in-flight requests;
+  adapter hot swap works where the engine supports it.
 - Backend admission refuses an infeasible plan with an actionable report; no silent paging.
 - The docs state clearly what still costs what: per-node prefill, routing TTFT, batching loss,
   and the runtime-modularity cost of distillation.
@@ -274,6 +279,8 @@ roadmap is shaped by these risks:
 | Distilled target loses rare routes or goes stale | Slice eval, provenance, re-distill policy, graph fallback (`Q-016`) |
 | Throughput loses to batching/queueing | Cross-request scheduler, per-model queues, isolation tests (T-0036) |
 | Parity claim rests on a weak baseline | Pinned quality-matched dense/MoE baselines and a published report (`Q-017`) |
+| Stale plans/students or a bad swap reach users | Immutable revisions, impact analysis, hash invalidation, canary, rollback (T-0038/T-0039) |
+| Iteration is too slow to modularize | Fast authoring loop, watch/diff/compare, incremental eval (T-0040) |
 
 ## How to use this roadmap when work stops
 

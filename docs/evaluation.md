@@ -248,6 +248,13 @@ release.
 | Dataset or eval change | Provenance + contamination check | Suite version bump; both versions reported |
 | Dependency update | Full CI + one e2e suite | No quality drop >2 points; security check |
 
+A model/prompt/adapter swap is evaluated as a **candidate against the incumbent**, not as an
+absolute score. The change class determines which suites run: node for a local swap, routing when
+the menu/cards/cost/latency change, e2e for every promotion, and parity benchmarking when the
+deployment target or performance class changes. Promotion is atomic and reversible; the source
+graph, suite version, model hashes, and deployment revision are all pinned. See
+[iteration.md](iteration.md).
+
 The 2-point tolerance is a placeholder for measurement noise with the chosen suites. If the
 confidence interval is wider than the tolerance, the suite is too small or too noisy; fix
 the measurement before tightening the gate.

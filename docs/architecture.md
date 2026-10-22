@@ -162,6 +162,11 @@ The backend contract, cost model, and limits are in
 [gpu-execution.md](gpu-execution.md); the LLM-parity analysis and compiled/distilled targets are
 in [performance.md](performance.md) and [ADR-0012](adr/0012-compiled-deployment-targets.md).
 
+The active backend and its compiled plan/student are part of an immutable **deployment
+revision**. Model/prompt swaps create a new revision after impact analysis and evaluation;
+promotion is atomic and rollback is a pointer switch. See [iteration.md](iteration.md) and
+[ADR-0013](adr/0013-immutable-deployment-revisions.md).
+
 ### 2.5 Model registry
 
 A local-first directory of model manifests, keyed by `id@version`. It resolves a graph's
@@ -341,6 +346,7 @@ Rules:
 | **Local daemon** | HTTP/OpenAI-compatible facade | Apps talk to a graph as if it were a model | v0.2 target |
 | **Resident GPU runtime** | CLI/library with `--backend resident|fused` | Low-overhead local execution on one GPU | Phase 5 ([T-0031](../.scratch/tickets/T-0031-resident-backend.md)) |
 | **Compiled / distilled target** | CLI/library with `--target compiled|distilled` | AOT plan or single-model hot path at LLM-class speed | Phase 5 ([T-0034](../.scratch/tickets/T-0034-aot-plan-compiler.md), [T-0037](../.scratch/tickets/T-0037-graph-distillation.md)) |
+| **Revisioned deployment** | Active pointer + previous revision | Safe model/prompt swaps, canary, rollback | Phase 4/5 ([T-0038](../.scratch/tickets/T-0038-change-sets-swaps.md), [T-0039](../.scratch/tickets/T-0039-canary-hot-swap.md)) |
 | **Visual inspector** | Read-only web UI over traces and graphs | Debugging, teaching, review | Spike ([T-0028](../.scratch/tickets/T-0028-visual-inspector.md)) |
 | **Hosted** | Multi-tenant service, registry, marketplace | Out of scope for v0 | Not planned yet |
 
@@ -392,6 +398,7 @@ for independent contributors to target than a plugin free-for-all.
 | [0010](adr/0010-evaluation-gated-contributions.md) | Evaluation-gated contributions and per-node ownership. | Accepted |
 | [0011](adr/0011-gpu-resident-backends.md) | GPU-resident execution as an optional backend; logical semantics unchanged. | Accepted |
 | [0012](adr/0012-compiled-deployment-targets.md) | Graphs compile to deployment targets, including a distilled single model. | Accepted |
+| [0013](adr/0013-immutable-deployment-revisions.md) | Swaps are immutable deployment revisions with explicit invalidation. | Accepted |
 
 Open questions that would change this architecture are tracked in
 [`../.scratch/ideas/open-questions.md`](../.scratch/ideas/open-questions.md).
