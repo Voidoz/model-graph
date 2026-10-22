@@ -17,8 +17,16 @@ with an ADR, the ADR wins; fix the glossary.
 | **Distillation** | Training a smaller specialist on filtered outputs of a larger teacher model. |
 | **E2E (end-to-end)** | Evaluation of a complete graph on real tasks, including routing and handoffs. |
 | **Envelope** | The request-scoped runtime state: run metadata, request, inputs, artifacts, notes, and budget. Never shown raw to a model. |
-| **Execution backend** | The component that owns model residency and invocation: portable provider calls (B0), resident heterogeneous models (B1), or fused same-base adapters (B2). It does not make routing decisions. |
+| **Execution backend** | The component that owns model residency and invocation: portable provider calls (B0), resident heterogeneous models (B1), fused same-base adapters (B2), or a compiled B2+ plan. It does not make routing decisions. B4 is a compiled target that bypasses graph execution. |
 | **Admission control** | The pre-load check that a graph's weights, KV cache, workspace, and adapter overhead fit the profile's VRAM. Failure is explicit, never silent paging. |
+| **AOT (ahead-of-time) plan** | A compiled execution plan containing tokenized static prompts, prefix KV caches, routing/compiler decisions, memory layout, and hashes. It is a cache, not a new source of truth. |
+| **Compiled target** | A deployment artifact produced from a graph: resident, fused, compiled-fused, or distilled. The graph remains the authoritative source. |
+| **Continuous batching** | Scheduling new requests into an active model batch as slots free up, instead of processing one request to completion. Required for throughput parity. |
+| **Distilled target (B4)** | A single student model trained to imitate a graph's behavior on a target distribution. It removes runtime routing/prefill at the cost of runtime modularity and rare-route quality. |
+| **Fast router** | A classifier, embedding model, or linear head that produces the structured routing decision at millisecond scale instead of a generative router call. |
+| **LLM parity** | A quality-matched comparison of TTFT, end-to-end latency, throughput, cost, and VRAM against a dense LLM baseline. It is workload-specific and must be measured. |
+| **Prefix KV compilation** | Precomputing and storing KV state for stable prompt prefixes so requests do not re-prefill them. Valid only under the same base, adapter, and tokenizer. |
+| **Route flattening** | Replacing a hierarchical router cascade with a direct leaf classifier at compile time, when evaluation shows the boundary is separable. |
 | **Cold load time** | Time to load weights/adapters before a run's first model call, reported separately from model time. |
 | **Fused backend (B2)** | A GPU-resident backend using one base model, one tokenizer, and per-node LoRA adapters. Token IDs may stay on-device; artifacts are still materialized as language. |
 | **Logical parity** | The requirement that a backend produce the same routing decisions and artifact text as the reference backend under scripted responses. |

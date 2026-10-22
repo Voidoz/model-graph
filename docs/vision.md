@@ -67,10 +67,13 @@ A user should be able to:
    pinned model versions, and diff two graphs.
 5. Train a specialist on a single 24GB GPU, submit it with an eval report, and see
    whether it improves a target node without regressing the end-to-end suite.
+6. Compile a graph to a fused or distilled deployment target and compare it with a
+   quality-matched dense LLM on TTFT, throughput, cost, and VRAM.
 
 The project-level north-star metric is **quality per dollar at matched task difficulty**.
-Secondary metrics: task success, p95 latency, routing accuracy, prune ratio, and the
-number of independently contributed nodes that pass evaluation gates.
+Secondary metrics: task success, TTFT, p95 latency, throughput, routing accuracy, prune ratio,
+and the number of independently contributed nodes that pass evaluation gates. Performance
+claims are always paired with a quality-matched dense baseline ([performance.md](performance.md)).
 
 ## The core hypotheses
 
@@ -84,6 +87,7 @@ large investments.
 | H3 | Capability-aware pruning produces real savings without surprising quality loss. | ≥30% cost reduction for a fixed deployment profile at parity. | Pruned graphs fail on tasks users actually send, not just benchmark tasks. |
 | H4 | Independent contributors can improve nodes on consumer hardware. | A 24GB-GPU LoRA improvement of ≥5 points on a node suite that survives end-to-end gating. | Gains vanish out-of-distribution, or eval gating cannot detect regressions. |
 | H5 | A GPU-resident backend removes most non-model overhead, and a shared-base adapter graph approaches single-model latency. | B1 transition p95 <15ms excluding prefill; B2 <5ms and TTFT within 1.25× of a single-model baseline; zero weight reloads. | VRAM or prefill dominates, the fused base constrains quality, or the measured gain over portable execution is negligible. |
+| H6 | A compiled deployment target can match a quality-matched dense LLM on latency and throughput for decomposable tasks. | Compiled fused TTFT ≤1.25× and throughput ≥0.9× dense; distilled target ≥1.0× throughput; cost ≤1.0× at matched quality. | The graph loses after prefix/route compilation and batching, or distillation cannot hold quality on rare routes. |
 
 **Kill criteria.** If, across three different domains, oracle routing beats the best
 single model by less than 5 quality points at equal cost, the cost-reduction thesis is

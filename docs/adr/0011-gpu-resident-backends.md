@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-22
 - **Deciders:** Project maintainers
-- **Related:** [gpu-execution.md](../gpu-execution.md), ADR-0001, ADR-0002, ADR-0009, ADR-0010
+- **Related:** [gpu-execution.md](../gpu-execution.md), [performance.md](../performance.md), ADR-0001, ADR-0002, ADR-0009, ADR-0010, ADR-0012
 
 ## Context
 
@@ -105,6 +105,7 @@ cross a graph boundary as a new artifact type.
 - [T-0032](../../.scratch/tickets/T-0032-fused-multilora.md): B2 and adapter manifest support.
 - [T-0033](../../.scratch/tickets/T-0033-transition-benchmark.md): transition measurement and
   gates.
+- B4 (distilled single-model target) is defined in [ADR-0012](0012-compiled-deployment-targets.md); it is not a multi-model GPU backend.
 - Revisit B3 only after B1/B2 data and with a new ADR.
 - Resolve `Q-014` (which in-process runners) and `Q-015` (GPU platform support) before
   promising cross-platform residency.

@@ -154,8 +154,11 @@ Before the walk, the runtime asks the backend to plan and load:
 5. **Close.** Release VRAM at the end of the run. Replay uses the recorded backend and plan;
    a backend change is a run-manifest difference, not a silent substitution.
 
-Backend details and admission rules are in [gpu-execution.md](gpu-execution.md). The
-scheduler does not branch on backend mode; only the executors' call target changes.
+Backend details and admission rules are in [gpu-execution.md](gpu-execution.md); compiled plans
+and distilled targets are analyzed in [performance.md](performance.md). B2+ is selected by the
+compiler; B4 bypasses the scheduler at runtime and is recorded as a deployment target, not as
+graph execution. The scheduler does
+not branch on backend mode; only the executors' call target changes.
 
 ## 3. Runtime state
 
@@ -284,7 +287,7 @@ providers: [ollama, llamacpp]
 licenses: [apache-2.0, mit]
 max_cost_usd: 0.0
 budget_overrides: {max_steps: 8}
-backend: auto                # portable | resident | fused | auto
+backend: auto                # portable | resident | fused | compiled | distilled | auto
 ```
 
 The pruner runs after validation and before compilation:

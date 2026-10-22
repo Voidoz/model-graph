@@ -238,7 +238,23 @@ Requirements:
 - **Respect the teacher's license.** Distillation output may inherit restrictions; record
   the teacher's license in the dataset and model manifests.
 
-### 5.3 Training loop and gates
+### 5.3 Distilling the graph itself
+
+A graph can also be a **teacher**. Collect representative inputs, run them through the graph
+(B0/B1/B2), filter the outputs, and train a single student to imitate the graph's behavior.
+This is the B4 deployment target ([performance.md](performance.md#58-b4-distilled-single-model),
+[ADR-0012](adr/0012-compiled-deployment-targets.md)):
+
+- It removes routing, handoff, and per-node prefill from the hot path.
+- It trades runtime modularity for single-model speed.
+- It can lose rare-route quality and can go stale when the graph changes.
+- Promotion requires slice-level evaluation, a re-distillation policy, and provenance back to
+  the source graph.
+
+Use it only for stable, high-volume paths where a single model is the right runtime shape. The
+graph remains the authoring, evaluation, and customization layer.
+
+### 5.4 Training loop and gates
 
 1. Establish the incumbent: current model + node eval + graph e2e.
 2. Train on a frozen dataset manifest.

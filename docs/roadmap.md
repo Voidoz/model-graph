@@ -161,20 +161,27 @@ The first release is real when all of the following are true:
 6. The security baseline is met and the open questions that block a public release (license,
    contribution terms, privacy) are resolved.
 
-## Phase 5 — Resident execution (post-v0)
+## Phase 5 — LLM-class execution (post-v0)
 
-**Goal:** remove avoidable runtime overhead and make a configured graph feel like one
-GPU-resident system, without changing logical semantics.
+**Goal:** make a configured graph a credible performance competitor to a dense LLM, not merely
+a modular runtime with lower transport overhead. The graph is treated as source; deployments
+may be resident, fused, compiled, or distilled.
 
-This phase is deliberately after usable v0. It must not delay M1–M4, and it does not change
-the graph, artifact, budget, or trace contracts. The design and limits are in
-[gpu-execution.md](gpu-execution.md) and [ADR-0011](adr/0011-gpu-resident-backends.md).
+This phase is deliberately after usable v0. It must not delay M1–M4, and the logical graph,
+artifact, budget, and trace contracts do not change. The analysis is in
+[performance.md](performance.md); the decisions are
+[ADR-0011](adr/0011-gpu-resident-backends.md) and
+[ADR-0012](adr/0012-compiled-deployment-targets.md).
 
 | Ticket | Deliverable |
 | --- | --- |
 | [T-0031](../.scratch/tickets/T-0031-resident-backend.md) | `ExecutionBackend` contract + resident heterogeneous spike (B1) |
 | [T-0032](../.scratch/tickets/T-0032-fused-multilora.md) | Fused same-base multi-LoRA backend (B2) |
-| [T-0033](../.scratch/tickets/T-0033-transition-benchmark.md) | Transition benchmark, parity checks, and performance gates |
+| [T-0033](../.scratch/tickets/T-0033-transition-benchmark.md) | Transition and LLM-parity benchmark, baselines, gates |
+| [T-0034](../.scratch/tickets/T-0034-aot-plan-compiler.md) | AOT execution plan: tokenized templates, prefix KV, memory plan |
+| [T-0035](../.scratch/tickets/T-0035-fast-routing.md) | Classifier/head routing, cascade flattening, route cache |
+| [T-0036](../.scratch/tickets/T-0036-batched-scheduler.md) | Multi-request scheduler and continuous batching |
+| [T-0037](../.scratch/tickets/T-0037-graph-distillation.md) | Single-model distilled deployment target (B4) |
 
 **Exit criteria**
 
@@ -182,15 +189,22 @@ the graph, artifact, budget, or trace contracts. The design and limits are in
   HTTP between nodes.
 - A shared-base graph runs with at least two adapters, token-native handoff, and artifacts
   logically identical to the portable backend.
-- The benchmark reports TTFT, ITL, transition latency, overhead ratio, VRAM peak, and cold
-  load for B0/B1/B2 and a single-model baseline.
+- A compiled plan eliminates static re-tokenization, reuses scoped prefix KV, and invalidates
+  safely when the graph/model changes.
+- Fast routing meets its latency target without losing oracle agreement beyond tolerance.
+- Cross-request batching improves throughput without breaking per-request budgets or isolation.
+- The benchmark reports TTFT, ITL, end-to-end p95, throughput, cost, VRAM, cold load, and
+  transition phases for B0/B1/B2 and dense/MoE/cascade baselines at matched quality.
+- A distilled student is evaluated against the graph; it is promoted only if quality holds,
+  and its staleness/re-distillation policy is documented.
 - Backend admission refuses an infeasible plan with an actionable report; no silent paging.
-- The docs state clearly what still costs what: per-node prefill, routing TTFT, and the
-  base-model constraint of the fused backend.
+- The docs state clearly what still costs what: per-node prefill, routing TTFT, batching loss,
+  and the runtime-modularity cost of distillation.
 
-**Milestone M5 — "Resident"**: a paired report shows a measured overhead reduction over B0
-and states the remaining gap to a single-model baseline, or the phase is cancelled with
-evidence.
+**Milestone M5 — "LLM-class or evidence"**: a quality-matched report either shows the compiled
+graph within the parity budget on at least three decomposable domains, or documents precisely
+where it loses. A negative result is a valid, valuable outcome; the phase can be cancelled
+rather than rationalized.
 
 ## Critical path
 
@@ -206,11 +220,15 @@ T-0018 (fan-out) is explicitly off the critical path and should not delay v0.
 Optional post-v0 performance track:
 
 ```text
-T-0021 → T-0031 → T-0032 → T-0033
+T-0021 → T-0031 → T-0032 → T-0034 → T-0035
+                         ↘ T-0036
+T-0033 (parity benchmark, rerun as targets land)
+T-0033 + T-0023/T-0025 → T-0037 (distillation)
 ```
 
 T-0031 can start after T-0013/T-0015/T-0019 even if Phase 2 is still running. It must not
-consume the capacity needed for M2/M3.
+consume the capacity needed for M2/M3. T-0033 can be run incrementally; T-0037 is the last
+step because it needs both the benchmark methodology and the training data.
 
 ## Deliberately not scheduled
 
@@ -222,6 +240,8 @@ consume the capacity needed for M2/M3.
 | Recursive graph composition | Termination and budget semantics need proof (`Q-007`) |
 | Auto-discovering graph topology | Evaluation is too weak to trust search yet |
 | Training a base model | Explicitly not the project's thesis |
+| Jointly trained MoE / expert merging | Strong single-model competitors, but they require shared training or lossy weight merging; compared in benchmarks, not adopted as the core |
+| Latent handoff between models | Requires co-designed representations and breaks independent ownership (ADR-0001); research only |
 
 ## Decision points
 
@@ -235,11 +255,12 @@ consume the capacity needed for M2/M3.
 | Before fan-out | Cost/quality justification from eval data | Maintainers |
 | Before Phase 5 | Does the measured overhead justify a resident backend, and which tier (B1/B2)? | Maintainers (T-0033) |
 | Before B2 | Is a shared base model acceptable for the target graph, given the quality trade-off? | Graph author + maintainers |
+| Before B4 | Does distillation preserve quality on rare routes, and is a hybrid graph fallback required? | Maintainers (`Q-016`) |
 
 ## Risk summary
 
 The full register is in [`../.scratch/ideas/risks.md`](../.scratch/ideas/risks.md). The
-roadmap is shaped by the top five:
+roadmap is shaped by these risks:
 
 | Risk | Mitigation in this roadmap |
 | --- | --- |
@@ -250,6 +271,9 @@ roadmap is shaped by the top five:
 | Scope sprawls into an agent framework | Explicit non-goals, deferred tools/recursion, node-kind restraint |
 | GPU residency forces silent paging or OOM | Pre-load admission, explicit fallback, no reload guarantee, T-0033 matrix |
 | Fused backend locks the graph to one base model | Opt-in backend, compatibility checks, quality eval, heterogeneous B1 remains |
+| Distilled target loses rare routes or goes stale | Slice eval, provenance, re-distill policy, graph fallback (`Q-016`) |
+| Throughput loses to batching/queueing | Cross-request scheduler, per-model queues, isolation tests (T-0036) |
+| Parity claim rests on a weak baseline | Pinned quality-matched dense/MoE baselines and a published report (`Q-017`) |
 
 ## How to use this roadmap when work stops
 

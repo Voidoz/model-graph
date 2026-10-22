@@ -109,8 +109,9 @@ is in the contracts, not in exotic machinery.
 | Compiler | Resolve manifests, expand defaults, produce a self-contained Graph IR with hashes and a stable node order. | Deterministic output; same input → same hash. |
 | Pruner | Apply a capability filter and remove unreachable/unsupported subgraphs. | Produces a PruneReport; never silently changes semantics. |
 
-The Graph IR is the runtime's only input. The runtime never re-reads YAML, so a run can
-be reproduced from the IR plus pinned manifests.
+The Graph IR is the graph runtime's only input. Compiled plans and distilled artifacts are built
+from the IR and recorded as deployment targets; the graph runtime never re-reads YAML, so a run
+can be reproduced from the IR plus pinned manifests.
 
 ### 2.3 Execution engine
 
@@ -136,12 +137,17 @@ and the model runners, and it never makes routing decisions or parses artifacts.
 | **B0 — portable** | Wraps provider adapters (HTTP or local subprocess). One model call at a time per branch; text handoffs; maximum portability. | Yes |
 | **B1 — resident heterogeneous** | Loads all models in the graph in one process and pins them in VRAM; in-process calls; text bridge between tokenizers; per-model prefix cache. | Opt-in |
 | **B2 — fused same-base multi-LoRA** | One resident base model, one tokenizer, per-node adapters; token IDs stay on-device; adapter switch per node. | Opt-in |
+| **B2+ — compiled fused** | B2 plus AOT tokenization, prefix KV, flattened/classifier routing, and memory planning. | Opt-in |
+| **B3 — latent handoff (research)** | Shared hidden state or trained projectors between models. Not v0; would require a new ADR. | No |
+| **B4 — distilled** | A single student model trained to imitate the graph on a target distribution; no graph runtime. | Opt-in hot path |
 
 Backend selection is part of the run profile and is recorded in the run manifest. The compiler
 checks model/tokenizer compatibility and VRAM admission. If the plan does not fit, the runtime
 fails with a report or falls back to B0 explicitly; it never pages weights silently. All
-backends must pass a logical-parity conformance suite: same decisions, artifact text, budgets,
-and replay behavior.
+multi-model backends must pass a logical-parity conformance suite: same decisions, artifact
+text, budgets, and replay behavior. B4 is a compiled target
+([ADR-0012](adr/0012-compiled-deployment-targets.md)): its trace records the student and
+provenance, not fabricated node decisions, and the source graph remains runnable.
 
 B0 still uses the provider adapter contract:
 
@@ -153,7 +159,8 @@ health()        -> {ok, model_loaded, detail}
 
 The adapter contract is specified in [protocol.md](protocol.md#9-provider-adapter-contract).
 The backend contract, cost model, and limits are in
-[gpu-execution.md](gpu-execution.md) and [ADR-0011](adr/0011-gpu-resident-backends.md).
+[gpu-execution.md](gpu-execution.md); the LLM-parity analysis and compiled/distilled targets are
+in [performance.md](performance.md) and [ADR-0012](adr/0012-compiled-deployment-targets.md).
 
 ### 2.5 Model registry
 
@@ -333,6 +340,7 @@ Rules:
 | **CLI** | `mg validate`, `mg run`, `mg eval`, `mg replay` | Local authoring, CI, scripts | v0 target |
 | **Local daemon** | HTTP/OpenAI-compatible facade | Apps talk to a graph as if it were a model | v0.2 target |
 | **Resident GPU runtime** | CLI/library with `--backend resident|fused` | Low-overhead local execution on one GPU | Phase 5 ([T-0031](../.scratch/tickets/T-0031-resident-backend.md)) |
+| **Compiled / distilled target** | CLI/library with `--target compiled|distilled` | AOT plan or single-model hot path at LLM-class speed | Phase 5 ([T-0034](../.scratch/tickets/T-0034-aot-plan-compiler.md), [T-0037](../.scratch/tickets/T-0037-graph-distillation.md)) |
 | **Visual inspector** | Read-only web UI over traces and graphs | Debugging, teaching, review | Spike ([T-0028](../.scratch/tickets/T-0028-visual-inspector.md)) |
 | **Hosted** | Multi-tenant service, registry, marketplace | Out of scope for v0 | Not planned yet |
 
@@ -383,6 +391,7 @@ for independent contributors to target than a plugin free-for-all.
 | [0009](adr/0009-local-first-provider-neutral.md) | Local-first, provider-neutral model binding. | Accepted |
 | [0010](adr/0010-evaluation-gated-contributions.md) | Evaluation-gated contributions and per-node ownership. | Accepted |
 | [0011](adr/0011-gpu-resident-backends.md) | GPU-resident execution as an optional backend; logical semantics unchanged. | Accepted |
+| [0012](adr/0012-compiled-deployment-targets.md) | Graphs compile to deployment targets, including a distilled single model. | Accepted |
 
 Open questions that would change this architecture are tracked in
 [`../.scratch/ideas/open-questions.md`](../.scratch/ideas/open-questions.md).

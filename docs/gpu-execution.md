@@ -57,11 +57,15 @@ Two consequences drive the design:
 | **B0** | Portable providers | One model at a time, usually via HTTP | UTF-8 text, tokenized per call | Heterogeneous models, remote APIs, portability baseline |
 | **B1** | Resident heterogeneous | All models in the graph, in one process, pinned in VRAM | Text/token bridge on host; in-process calls | A deployment set that fits on one GPU and uses different model families |
 | **B2** | Fused same-base multi-LoRA | One base model + all node adapters + one tokenizer | Token IDs stay on device; adapter switch | Graphs whose specialists are LoRA adapters on one base; the closest to a single-model feel |
+| **B2+** | Compiled fused | B2 + pre-tokenized templates + prefix KV + fast/flattened routes | Token IDs; compiled decisions | Latency-critical shared-base graphs with stable prompts |
 | **B3** | Latent handoff (research) | Shared representation or trained projectors | Hidden states / soft prompts | Not v0; requires a new ADR and co-designed models |
+| **B4** | Distilled single model | One student model | None at runtime | Stable high-volume hot paths; the only target that exactly matches a dense LLM's runtime shape |
 
-B0 is the default and the portability guarantee. B1 and B2 are opt-in deployments selected by
-a profile. B3 is deliberately out of scope: it would break independent model ownership unless
-the models were trained to share a latent space.
+B0 is the default and the portability guarantee. B1, B2, and B2+ are opt-in deployments selected
+by a profile. B4 is a **compiled deployment target** ([ADR-0012](adr/0012-compiled-deployment-targets.md)):
+the graph is used for authoring/training/evaluation, and a student model imitates it at runtime.
+It gives up runtime modularity for single-model speed. B3 is deliberately out of scope: it
+would break independent model ownership unless the models were trained to share a latent space.
 
 ## 4. B1 — Resident heterogeneous backend
 
@@ -259,8 +263,15 @@ Even with a perfect backend:
    supports heterogeneous experts.
 4. Build **B2** for one reference base model with LoRA adapters: it is the realistic "single
    model feel" path and aligns with independent adapter training.
-5. Gate every performance claim on T-0033. Do not put "runs like a single model" in the README
-   before the paired report exists.
+5. Add **B2+ compilation** (AOT prefixes, fast/flattened routing) and **cross-request
+   batching**. These are the two biggest remaining levers after residency.
+6. Offer **B4 distillation** for stable high-volume hot paths. It is the only target that
+   exactly matches a dense LLM's runtime shape.
+7. Gate every performance claim on T-0033/T-0037 reports. Do not put "runs like a single
+   model" in the README before the paired report exists.
+
+The full option comparison, overhead budget, and parity gates are in
+[performance.md](performance.md).
 
 ## 11. Roadmap
 
@@ -268,7 +279,12 @@ Even with a perfect backend:
 | --- | --- |
 | [T-0031](../.scratch/tickets/T-0031-resident-backend.md) | Backend abstraction + resident heterogeneous spike |
 | [T-0032](../.scratch/tickets/T-0032-fused-multilora.md) | Fused same-base multi-LoRA backend |
-| [T-0033](../.scratch/tickets/T-0033-transition-benchmark.md) | Transition benchmark, parity checks, and gates |
+| [T-0033](../.scratch/tickets/T-0033-transition-benchmark.md) | Transition and LLM-parity benchmark, gates |
+| [T-0034](../.scratch/tickets/T-0034-aot-plan-compiler.md) | AOT plan, prompt/tokenization, prefix KV, memory plan |
+| [T-0035](../.scratch/tickets/T-0035-fast-routing.md) | Classifier/head routing, flattening, route cache |
+| [T-0036](../.scratch/tickets/T-0036-batched-scheduler.md) | Multi-request scheduler and continuous batching |
+| [T-0037](../.scratch/tickets/T-0037-graph-distillation.md) | Distilled single-model deployment target |
 
 Phase 5 is post-v0: it must not delay the usable local release. It is the performance track
-that makes the "single model" experience measurable.
+that makes the "single model" experience measurable. Not every graph should run on every target;
+the compiler and the benchmark decide.

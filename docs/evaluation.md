@@ -79,6 +79,24 @@ cost is a different claim than an improvement at parity.
 
 A high task success rate with a 20% protocol error rate is not production-ready.
 
+### 2.4 LLM-parity metrics
+
+Speed claims are only meaningful at matched quality. For every deployment target, report the
+ratio to a quality-matched dense baseline:
+
+| Ratio | Definition | Initial target |
+| --- | --- | --- |
+| `ttft_ratio` | Target TTFT / dense TTFT | ≤1.25 (compiled), ≤1.10 (distilled) |
+| `e2e_p95_ratio` | Target end-to-end p95 / dense p95 | ≤1.25 |
+| `throughput_ratio` | Target tokens or tasks per GPU-second / dense | ≥0.9 (compiled), ≥1.0 (distilled) |
+| `cost_ratio` | Target cost per task / dense | ≤1.0 |
+| `vram_ratio` | Peak target VRAM / peak dense VRAM | ≤1.5 (compiled fused) |
+| `overhead_ratio` | Non-model wall time / total wall time | <0.10 |
+
+Report all ratios with confidence intervals and the workload. A target that is faster but not
+quality-matched is a different operating point, not a parity result. The full matrix and the
+falsification conditions are in [performance.md](performance.md#8-overhead-budget).
+
 ## 3. Routing evaluation
 
 Routing is evaluated on a fixed set of requests with known oracle routes.
@@ -226,6 +244,7 @@ release.
 | Graph topology change | Graph suite + all node suites | No drop >2 points; cost/latency reported |
 | New provider adapter | Contract tests + one graph e2e | 100% contract pass; no quality drop >2 points |
 | New execution backend | Logical-parity suite + transition benchmark | Decisions/artifacts identical under scripted responses; overhead gates in T-0033 met; fallback explicit |
+| New compiled/distilled target | Parity suite + LLM-parity benchmark | Decisions/artifacts identical where applicable; TTFT/p95/throughput/cost gates met; no quality drop beyond tolerance; provenance recorded |
 | Dataset or eval change | Provenance + contamination check | Suite version bump; both versions reported |
 | Dependency update | Full CI + one e2e suite | No quality drop >2 points; security check |
 
