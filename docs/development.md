@@ -29,8 +29,14 @@ uv run pytest tests/test_smoke.py -q
 uv run pytest tests/test_smoke.py::test_version_command -v
 ```
 
-The test suite must run **offline**. Tests that need a local model are opt-in via environment
-variables and skip by default.
+The test suite must run **offline**. Live Ollama tests are opt-in:
+
+```text
+make live-test
+# equivalent to: MG_TEST_OLLAMA=1 uv run pytest tests/live -q
+```
+
+They skip by default and require a running Ollama server with the example models pulled.
 
 ## Adding dependencies
 

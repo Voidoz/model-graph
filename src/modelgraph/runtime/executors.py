@@ -238,17 +238,29 @@ class RouterExecutor:
             raise RuntimeFailure(
                 "router decision must be a JSON object", details={"code": "MG-2101"}
             )
-        action = data.get("decision")
         confidence = data.get("confidence")
         reason = str(data.get("reason") or "").strip()
+        note = data.get("note")
+        menu = {edge.to for edge in graph.outgoing(node.id)}
+
+        # Canonical decision shape, plus the compact route shape emitted by small routers.
+        target_value = data.get("route") if "route" in data else data.get("to")
+        target = target_value if isinstance(target_value, str) else None
+        action: object
+        if "route" in data:
+            action = "abstain" if target == "abstain" else "route"
+        else:
+            action = data.get("decision")
         if action == "abstain":
-            return RouteDecision("fallback", None, float(confidence or 0.0), reason or "abstained")
+            if not isinstance(confidence, (int, float)) or not 0 <= float(confidence) <= 1:
+                confidence = 0.0
+            return RouteDecision(
+                "fallback", None, float(confidence), reason or "abstained", None, text
+            )
         if action != "route":
             raise RuntimeFailure(
                 "router decision must be route or abstain", details={"code": "MG-2101"}
             )
-        target = data.get("to")
-        menu = {edge.to for edge in graph.outgoing(node.id)}
         if not isinstance(target, str) or target not in menu:
             raise RuntimeFailure(
                 f"router target {target!r} is not in the menu",
@@ -258,9 +270,8 @@ class RouterExecutor:
             raise RuntimeFailure(
                 "router confidence must be between 0 and 1", details={"code": "MG-2101"}
             )
-        if not reason:
-            reason = "no reason supplied"
-        note = data.get("note")
+        if not reason or reason == "short reason":
+            reason = f"router selected {target}"
         return RouteDecision(
             "route",
             target,
@@ -376,11 +387,14 @@ def parse_artifacts(text: str, node: CompiledNode) -> list[dict[str, Any]]:
 
 
 def _strip_single_code_fence(content: str) -> str:
-    lines = content.splitlines()
-    if len(lines) < 3:
-        return content
-    if not lines[0].startswith("```"):
-        return content
-    if lines[-1].strip() != "```":
-        return content
-    return "\n".join(lines[1:-1])
+    stripped = content.strip()
+    lines = stripped.splitlines()
+    if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1])
+
+    # Models often return one fenced code block followed by an explanation. If there is
+    # exactly one block, treat it as the artifact and discard the surrounding prose.
+    matches: list[str] = re.findall(r"^```[^\n]*\n(.*?)\n```\s*$", content, re.S | re.M)
+    if len(matches) == 1:
+        return matches[0]
+    return content

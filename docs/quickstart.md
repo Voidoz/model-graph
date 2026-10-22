@@ -96,6 +96,9 @@ embedded in the graph.
 If Ollama is not running, the run fails with a typed `MG-3001` connection error and still writes
 a trace/manifest for inspection.
 
+The hello/composed/coding-specialist examples have been verified live on CPU (no working GPU
+driver). See `.scratch/runs/2026-10-22-live-ollama.md`; timings are hardware-specific.
+
 ## 7. Nested graph
 
 ```text

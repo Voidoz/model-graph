@@ -15,6 +15,7 @@ from modelgraph.contracts.schema import validate_document
 from modelgraph.errors import Issue, ModelGraphError
 from modelgraph.registry import Registry, default_registry
 from modelgraph.util import canonical_json, sha256_text
+from modelgraph.version import PARSER_VERSION, RENDERER_VERSION
 
 
 class _Nested:
@@ -180,6 +181,8 @@ def _compile_document(
     compiled_edges = tuple(CompiledEdge.from_edge(edge) for edge in graph.spec.edges)
     canonical = {
         "apiVersion": graph.apiVersion,
+        "renderer_version": RENDERER_VERSION,
+        "parser_version": PARSER_VERSION,
         "graph": graph.to_dict(),
         "resolved_models": resolved_models,
         "subgraphs": {

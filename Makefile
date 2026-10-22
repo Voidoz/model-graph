@@ -3,7 +3,7 @@ PYTEST ?= $(UV) run pytest
 RUFF ?= $(UV) run ruff
 MYPY ?= $(UV) run mypy
 
-.PHONY: sync format lint type test check clean
+.PHONY: sync format lint type test live-test check clean
 
 sync:
 	$(UV) sync
@@ -21,6 +21,9 @@ type:
 
 test:
 	$(PYTEST) -q
+
+live-test:
+	MG_TEST_OLLAMA=1 $(PYTEST) tests/live -q
 
 check: lint type test
 

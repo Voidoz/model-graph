@@ -18,6 +18,7 @@ from modelgraph.runtime.envelope import RuntimeState
 from modelgraph.runtime.executors import Executor, RouterExecutor, WorkerExecutor
 from modelgraph.runtime.trace import TraceRecorder
 from modelgraph.util import sha256_text, utc_now
+from modelgraph.version import PARSER_VERSION, RENDERER_VERSION
 
 ProviderFactory = Callable[[ModelManifest], Provider]
 
@@ -420,6 +421,8 @@ def _persist_run(
         "run_id": state.run_id,
         "deployment_revision": f"rev_{state.run_id}",
         "target": "portable",
+        "renderer_version": RENDERER_VERSION,
+        "parser_version": PARSER_VERSION,
         "outcome": result.outcome,
         "graph": {
             "id": state.graph.id,

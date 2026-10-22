@@ -33,7 +33,7 @@ spec:
       model: router-small
       reads: [task]
       routing:
-        confidence_threshold: 0.7
+        confidence_threshold: 0.6
         on_low_confidence: fallback
         max_retries: 1
     - id: js-specialist

@@ -106,3 +106,19 @@ def test_registry_resolves_examples() -> None:
     assert registry.resolve_model("router-small@1.0.0") is not None
     assert registry.resolve_model("router-small@9.9.9") is None
     assert registry.resolve_graph("coding-specialist@1.0.0") is not None
+
+
+def test_renderer_and_parser_versions_are_in_graph_hash(monkeypatch) -> None:
+    import modelgraph.compiler.compile as compile_module
+
+    base = compile_graph(EXAMPLES / "hello-triage.graph.yaml", strict_models=True)
+    assert base.graph
+    monkeypatch.setattr(compile_module, "RENDERER_VERSION", "999")
+    changed = compile_graph(EXAMPLES / "hello-triage.graph.yaml", strict_models=True)
+    assert changed.graph
+    assert changed.graph.graph_hash != base.graph.graph_hash
+    monkeypatch.setattr(compile_module, "RENDERER_VERSION", "2")
+    monkeypatch.setattr(compile_module, "PARSER_VERSION", "999")
+    parser_changed = compile_graph(EXAMPLES / "hello-triage.graph.yaml", strict_models=True)
+    assert parser_changed.graph
+    assert parser_changed.graph.graph_hash != base.graph.graph_hash

@@ -49,6 +49,9 @@ mg run examples/composed-assistant.graph.yaml --provider mock --json
 
 Profiles are a later ticket (T-0015); the MVP uses the provider declared in each manifest.
 
+The hello, composed, and coding-specialist graphs have been run live against the local Ollama
+models on CPU. See `.scratch/runs/2026-10-22-live-ollama.md` for timings and caveats.
+
 ## What to look at in `envelope.json`
 
 - `run.path` shows the router decision and the subgraph entry.

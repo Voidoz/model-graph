@@ -336,3 +336,13 @@ def test_joiner_execution(tmp_path: Path) -> None:
     assert outcome.ok, outcome.error
     assert [entry.node for entry in outcome.path] == ["triage", "coding", "merge"]
     assert outcome.artifacts[0].content == "final text"
+
+
+def test_parse_extracts_single_fenced_code_block_with_prose() -> None:
+    graph = _compile()
+    node = graph.node("coding")
+    parsed = parse_artifacts(
+        "Here is the code:\n\n```typescript\nconst x = 1;\n```\n\nThis assumes a browser.",
+        node,
+    )
+    assert parsed[0]["content"] == "const x = 1;"

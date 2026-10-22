@@ -13,7 +13,7 @@ runner = CliRunner()
 def test_version() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert result.stdout.strip() == "0.1.0"
+    assert result.stdout.strip() == "0.1.1"
 
 
 def test_validate_json() -> None:

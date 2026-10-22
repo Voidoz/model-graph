@@ -228,9 +228,10 @@ A model returns text. The runtime must map that text to the node's `writes` cont
 
 ### 4.1 Single-write nodes (the common case)
 
-If a node declares exactly one `writes` entry, the entire model response (after stripping
-a leading/trailing code fence only if the declared type is `code` and the fence is
-unambiguous) becomes that artifact. No wrapper is required. This keeps prompts simple and
+If a node declares exactly one `writes` entry, the entire model response becomes that
+artifact. When the declared type is `code` and the response contains exactly one fenced
+code block, the parser extracts that block (with or without surrounding prose) and discards
+the fence. Multiple fenced blocks or ambiguous content are preserved verbatim. No wrapper is required. This keeps prompts simple and
 works with small models.
 
 ### 4.2 Multi-write nodes
@@ -343,6 +344,22 @@ The router is told:
 | `confidence` | yes | Number in `[0,1]`. |
 | `reason` | yes | Non-empty, ≤ 500 characters; recorded in the trace. |
 | `note` | no | ≤ 1,000 characters; passed to the child as a delimited hint, never as the task. |
+
+Small local routers are more reliable with a compact wire form:
+
+```json
+{"route": "js-specialist", "confidence": 0.93, "reason": "TypeScript implementation."}
+```
+
+```json
+{"route": "abstain", "confidence": 0.44, "reason": "No route fits."}
+```
+
+The runtime accepts either representation, normalizes it to the canonical decision above, and
+records the canonical form in the trace. A compact `route` may be a target ID or `abstain`.
+The semantic contract is unchanged: a target, a confidence, a reason, and an optional note.
+The prompt uses the compact form because it is shorter and less prone to template copying by
+1–3B routers.
 
 Unknown fields are ignored in v0 and preserved in the trace for forward compatibility.
 
