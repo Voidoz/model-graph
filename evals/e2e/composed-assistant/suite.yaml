@@ -1,0 +1,68 @@
+apiVersion: modelgraph/eval/v0
+kind: EvalSuite
+metadata:
+  id: e2e/composed-assistant
+  name: Composed assistant end-to-end suite (mock)
+  version: 1.0.0
+  description: >-
+    Offline end-to-end fixture for the composed assistant. It runs the nested coding graph and
+    the storyteller through the real runtime, grades the exit artifact, and derives best-single,
+    cheapest, oracle, and random-routing baselines from the same cases. One case is a deliberate
+    routing loss and one is a deliberate validity failure so the report includes failure slices.
+  labels:
+    level: e2e
+    domain: general
+    provider: mock
+  authors:
+    - Model Graph contributors
+  license: CC0-1.0
+spec:
+  level: e2e
+  provider: mock
+  claim: >-
+    The e2e harness can measure whole-graph task success, validity, cost, latency, and hops
+    against best-single, cheapest, oracle, and random baselines with deterministic mock data.
+  target:
+    graph: examples/composed-assistant.graph.yaml
+  metric: task_success
+  thresholds:
+    task_success: 0.6
+    validity: 0.8
+    protocol_error_rate: 0.2
+    cost_per_task_usd: 0.0
+  budget:
+    max_cost_usd: 0.05
+    max_tokens: 200000
+  baselines:
+    best_single: true
+    cheapest_capable: true
+    oracle_routing: true
+    random_routing: true
+    incumbent: true
+    measure_oracle: true
+    oracle_ambiguity_delta: 0.05
+    random_seed: 7
+    capability_threshold: 0.0
+    notes: >-
+      Every example model manifest is free, so cost bands collapse to a $0 point; quality is
+      scripted task success, not a model-quality claim.
+  oracle:
+    labeling_method: measured-first-hop-route-probes
+    labeling_cost_usd: 0.0
+    sampled_from: evals/e2e/composed-assistant/cases.jsonl
+    ambiguity_rule: >-
+      Mark a case ambiguous when the best and second-best measured branch qualities differ by
+      at most oracle_ambiguity_delta, or when the case explicitly says so.
+    notes: >-
+      Labels are produced by running the graph with the first router forced through each
+      candidate branch and grading the same exit checks. Nested routing follows the case's
+      scripted decisions.
+  selection:
+    reason: Six hand-written cases run offline and cover success, routing loss, and validity loss.
+  provenance:
+    source: Hand-written tasks and scripted mock responses.
+    contamination: checked
+    notes: No benchmark or training data is copied into this suite.
+  cases: cases.jsonl
+  judge:
+    enabled: false

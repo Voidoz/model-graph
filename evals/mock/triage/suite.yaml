@@ -1,0 +1,60 @@
+apiVersion: modelgraph/eval/v0
+kind: EvalSuite
+metadata:
+  id: mock/triage
+  name: Triage routing suite (mock, synthetic oracle)
+  version: 1.0.0
+  description: >-
+    Offline routing suite for the hello-triage graph. Oracle routes and ambiguity labels are
+    hand-authored. Scripted mock decisions exercise agreement, confusion, abstention,
+    calibration, and protocol-error accounting without a network.
+  labels:
+    level: routing
+    domain: general
+    provider: mock
+  authors:
+    - Model Graph contributors
+  license: CC0-1.0
+spec:
+  level: routing
+  provider: mock
+  claim: >-
+    The routing harness computes oracle agreement, confusion, abstain metrics, and ECE from
+    runtime router decisions. The oracle labels are synthetic and do not claim measured
+    child quality.
+  target:
+    graph: examples/hello-triage.graph.yaml
+    router: triage
+  metric: oracle_agreement
+  thresholds:
+    oracle_agreement: 0.55
+    protocol_error_rate: 0.2
+    abstain_precision: 0.4
+    cost_per_task_usd: 0.0
+  budget:
+    max_cost_usd: 0.05
+    max_tokens: 200000
+  oracle:
+    labeling_method: synthetic-authored
+    labeling_cost_usd: 0.0
+    sampled_from: synthetic-triage-v0
+    ambiguity_rule: >-
+      Mark a request ambiguous when both the coding and storytelling menus plausibly fit and
+      no single detail clearly dominates. Ambiguous cases are excluded from oracle agreement
+      and calibration, and are reported through abstain precision and recall.
+    notes: >-
+      v0 labels are authored by the suite author rather than produced by running every child.
+      T-0021 owns measured oracle labeling. Zero marginal cost because no extra calls were made.
+  calibration:
+    bins: 5
+    threshold_steps: 10
+    notes: >-
+      Descriptive only. The suite is too small for a fit/eval calibration split; no
+      temperature scaling is applied.
+  provenance:
+    source: Hand-written requests with synthetic oracle routes.
+    contamination: checked
+    notes: No benchmark or training data is copied into this suite.
+  cases: cases.jsonl
+  judge:
+    enabled: false

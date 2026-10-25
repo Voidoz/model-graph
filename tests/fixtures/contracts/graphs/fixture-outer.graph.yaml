@@ -1,0 +1,38 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-outer
+  name: Fixture Outer
+  version: 1.0.0
+  description: The outer graph of the subgraph and model cross-reference corpus.
+spec:
+  entry: route
+  inputs:
+    - name: task
+      type: text
+  exit: [answer]
+  nodes:
+    - id: route
+      kind: router
+      description: Sends every request to the nested inner team.
+      model: fixture-router
+      reads: [task]
+    - id: team
+      kind: subgraph
+      description: The nested inner graph that produces the answer.
+      graph: fixture-inner@1.0.0
+      reads: [task]
+      input_map:
+        task: task
+      output_map:
+        answer: answer
+      writes:
+        - name: answer
+          type: text
+  edges:
+    - from: route
+      to: team
+      when: The request needs the inner team.
+      examples:
+        - Ask the inner team for an answer.
+      artifact: text

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from modelgraph.contracts.graph import ArtifactType
+from modelgraph.contracts.constraints import ArtifactName, ContentHash, NodeId
+from modelgraph.contracts.graph import ArtifactType, BudgetExhaustedAction, NodeKind
+
+_PATH_KINDS = tuple(kind.value for kind in NodeKind)
+_BUDGET_POLICIES = tuple(action.value for action in BudgetExhaustedAction)
 
 
 class _Model(BaseModel):
@@ -16,40 +20,57 @@ class _Model(BaseModel):
 class GraphRef(_Model):
     id: str
     version: str
-    hash: str
+    hash: ContentHash
 
 
 class PathEntry(_Model):
-    node: str
-    kind: str
-    decision: str | None = None
-    to: str | None = None
+    node: NodeId
+    kind: str = Field(json_schema_extra={"enum": list(_PATH_KINDS)})
+    decision: Literal["route", "abstain"] | None = None
+    to: NodeId | None = None
     confidence: float | None = None
     reason: str | None = None
     graph: str | None = None
-    graph_hash: str | None = None
+    graph_hash: ContentHash | None = None
+
+    @field_validator("kind")
+    @classmethod
+    def _check_kind(cls, value: str) -> str:
+        if value not in _PATH_KINDS:
+            raise ValueError(f"kind must be one of {list(_PATH_KINDS)}")
+        return value
 
 
 class BudgetState(_Model):
-    max_steps: int = 8
-    used_steps: int = 0
-    max_depth: int = 3
+    max_steps: int
+    used_steps: int
+    max_depth: int
     max_total_tokens: int = 32_000
     used_tokens: int = 0
     max_cost_usd: float = 0.25
     used_cost_usd: float = 0.0
     max_wall_seconds: float = 300.0
     elapsed_seconds: float = 0.0
-    on_budget_exhausted: str = "fail"
+    on_budget_exhausted: str = Field(
+        default=BudgetExhaustedAction.fail,
+        json_schema_extra={"enum": list(_BUDGET_POLICIES)},
+    )
+
+    @field_validator("on_budget_exhausted")
+    @classmethod
+    def _check_policy(cls, value: str) -> str:
+        if value not in _BUDGET_POLICIES:
+            raise ValueError(f"on_budget_exhausted must be one of {list(_BUDGET_POLICIES)}")
+        return value
 
 
 class RunInfo(_Model):
     id: str
     graph: GraphRef
     parent_run_id: str | None = None
-    depth: int = 0
-    step: int = 0
-    path: list[PathEntry] = Field(default_factory=list)
+    depth: int
+    step: int
+    path: list[PathEntry]
     budget: BudgetState
     started_at: str
     seed: int | None = None
@@ -62,13 +83,13 @@ class Request(_Model):
 
 
 class Artifact(_Model):
-    name: str
+    name: ArtifactName
     type: ArtifactType
     media_type: str | None = None
     content: str
     producer: str
     created_at: str
-    hash: str | None = None
+    hash: ContentHash | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -79,11 +100,11 @@ class Note(_Model):
 
 
 class Envelope(_Model):
-    schema_: str = Field(default="modelgraph/envelope/v0", alias="schema")
+    schema_: Literal["modelgraph/envelope/v0"] = Field(alias="schema")
     run: RunInfo
     request: Request
-    inputs: list[Artifact] = Field(default_factory=list)
-    artifacts: list[Artifact] = Field(default_factory=list)
+    inputs: list[Artifact]
+    artifacts: list[Artifact]
     notes: list[Note] = Field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

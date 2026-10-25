@@ -1,0 +1,47 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-joiner
+  name: Fixture Joiner
+  version: 1.0.0
+  description: A router, a draft worker, and a joiner that rewrites the draft.
+spec:
+  entry: triage
+  inputs:
+    - name: task
+      type: text
+  exit: [answer]
+  nodes:
+    - id: triage
+      kind: router
+      description: Sends every request to the drafting worker.
+      model: fixture-router
+      reads: [task]
+    - id: draft
+      kind: worker
+      description: Produces a first draft for the joiner to polish.
+      model: fixture-worker
+      reads: [task]
+      instruction: Write a short draft.
+      writes:
+        - name: draft
+          type: text
+    - id: polish
+      kind: joiner
+      description: Rewrites the draft into the final answer.
+      model: fixture-worker
+      reads: [draft]
+      instruction: Polish the draft.
+      strategy: synthesize
+      writes:
+        - name: answer
+          type: text
+  edges:
+    - from: triage
+      to: draft
+      when: The request needs a draft.
+      examples:
+        - Write a short paragraph.
+      artifact: text
+    - from: draft
+      to: polish

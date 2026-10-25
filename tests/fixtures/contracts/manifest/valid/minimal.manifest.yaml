@@ -1,0 +1,13 @@
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: fixture-minimal-model
+  name: Fixture Minimal Model
+  version: 1.0.0
+  description: A minimal model manifest that only declares the required fields.
+spec:
+  provider: mock
+  model: mock-minimal
+  context_window: 4096
+  license:
+    name: apache-2.0

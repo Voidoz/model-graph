@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from jsonschema import Draft202012Validator
 
 from modelgraph.contracts import load_document, load_schema, validate_document, validator
 from modelgraph.contracts.envelope import Envelope
@@ -18,6 +19,8 @@ TICKETS = ROOT / ".scratch" / "tickets"
 
 @pytest.mark.parametrize("name", ["graph", "manifest", "envelope", "ticket"])
 def test_schemas_are_valid(name: str) -> None:
+    schema = load_schema(name)
+    Draft202012Validator.check_schema(schema)
     validator(name)
 
 
@@ -71,3 +74,14 @@ def test_schema_snapshot_loads() -> None:
     schema = load_schema("graph")
     assert schema["title"] == "Model Graph"
     assert schema["properties"]["apiVersion"]["const"] == "modelgraph/v0"
+
+
+def test_corrupted_example_fails_without_changing_the_committed_fixture() -> None:
+    path = EXAMPLES / "hello-triage.graph.yaml"
+    document = load_document(path)
+    document["spec"]["nodes"][0]["kind"] = "planner"
+    issues = validate_document(document, "graph")
+    assert issues
+    assert any(issue.path.endswith("nodes[0].kind") for issue in issues)
+    # The file on disk is unchanged and still valid.
+    assert not validate_document(load_document(path), "graph")

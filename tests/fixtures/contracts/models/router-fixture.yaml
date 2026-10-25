@@ -1,0 +1,13 @@
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: fixture-router
+  name: Fixture Router Model
+  version: 1.0.0
+  description: A mock routing model used by the cross-reference fixture corpus.
+spec:
+  provider: mock
+  model: mock-router
+  context_window: 4096
+  license:
+    name: apache-2.0

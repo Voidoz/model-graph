@@ -3,32 +3,74 @@
 from __future__ import annotations
 
 import re
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict
 
+from modelgraph.contracts.constraints import TicketDate, TicketId
 from modelgraph.contracts.schema import validate_document
 from modelgraph.errors import Issue, ModelGraphError
 
 _FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.S)
 
 
+class TicketStatus(StrEnum):
+    todo = "todo"
+    ready = "ready"
+    in_progress = "in-progress"
+    blocked = "blocked"
+    review = "review"
+    done = "done"
+    dropped = "dropped"
+
+
+class TicketArea(StrEnum):
+    foundations = "foundations"
+    compiler = "compiler"
+    runtime = "runtime"
+    protocol = "protocol"
+    providers = "providers"
+    evaluation = "evaluation"
+    training = "training"
+    registry = "registry"
+    experience = "experience"
+    security = "security"
+    observability = "observability"
+    docs = "docs"
+
+
+class TicketSize(StrEnum):
+    XS = "XS"
+    S = "S"
+    M = "M"
+    L = "L"
+    XL = "XL"
+
+
+class TicketPriority(StrEnum):
+    P0 = "P0"
+    P1 = "P1"
+    P2 = "P2"
+    P3 = "P3"
+
+
 class TicketFrontmatter(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: str
+    id: TicketId
     title: str
-    status: str
+    status: TicketStatus
     phase: int
-    area: str
-    size: str
-    priority: str
-    depends_on: list[str] = []
+    area: TicketArea
+    size: TicketSize
+    priority: TicketPriority
+    depends_on: list[TicketId] = []
     owner: str | None = None
-    created: str
-    updated: str
+    created: TicketDate
+    updated: TicketDate
     labels: list[str] = []
     blocked_reason: str | None = None
 

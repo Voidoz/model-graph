@@ -259,6 +259,20 @@ The 2-point tolerance is a placeholder for measurement noise with the chosen sui
 confidence interval is wider than the tolerance, the suite is too small or too noisy; fix
 the measurement before tightening the gate.
 
+The executable version of this table is
+[`evals/baselines/policy.json`](../evals/baselines/policy.json): it is the single reviewed
+source of tolerances and hard gates, and `mg eval compare` fails closed when a policy metric
+is missing rather than treating it as unmeasured. Run the offline gates with
+`make eval-gates`, or compare one candidate directly:
+
+```text
+uv run mg eval compare --baseline evals/baselines/e2e.json \
+  --candidate runs/evals/ci/e2e.json
+```
+
+Baseline ownership, the baseline-update review process, and the waiver format are documented
+in [`evals/baselines/README.md`](../evals/baselines/README.md).
+
 ### 6.1 Hard gates
 
 Some things cannot be traded away:

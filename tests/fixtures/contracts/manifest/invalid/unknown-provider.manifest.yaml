@@ -1,0 +1,13 @@
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: fixture-unknown-provider
+  name: Fixture Unknown Provider
+  version: 1.0.0
+  description: A model manifest whose provider is not part of the contract.
+spec:
+  provider: vllm
+  model: fixture-model
+  context_window: 4096
+  license:
+    name: apache-2.0

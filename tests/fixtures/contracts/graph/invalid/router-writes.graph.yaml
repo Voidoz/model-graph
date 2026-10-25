@@ -1,0 +1,33 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-router-writes
+  name: Fixture Router Writes
+  version: 1.0.0
+  description: A graph whose router illegally writes an artifact.
+spec:
+  entry: triage
+  exit: [answer]
+  nodes:
+    - id: triage
+      kind: router
+      description: This router incorrectly declares a write.
+      model: fixture-router
+      reads: [task]
+      writes:
+        - name: answer
+          type: text
+    - id: work
+      kind: worker
+      description: Writes the real answer for the graph exit.
+      model: fixture-worker
+      reads: [task]
+      instruction: Answer the request.
+      writes:
+        - name: answer
+          type: text
+  edges:
+    - from: triage
+      to: work
+      when: Always route to the worker.
+      artifact: text

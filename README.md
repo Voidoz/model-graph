@@ -9,7 +9,7 @@ which expert should see the request, the expert answers, and the graph returns t
 result. Experts can be trained by different people on ordinary hardware, versioned
 independently, and pruned when a deployment does not need them.
 
-> **Status: v0.2.0 — GUI MVP, live-validated on CPU and Vulkan GPU.** The repository has a
+> **Status: v0.3.0 — GUI, evaluation, and pruning MVP.** The repository has a
 > runnable vertical slice — schema and semantic validation, router/worker/joiner/subgraph
 > execution, deterministic mock and local HTTP providers, hard budgets, traces, run manifests,
 > and offline replay — plus a loopback-only `mg ui` GUI for graph inspection, mock runs,
@@ -96,6 +96,22 @@ point history at another directory. The run console's `mock` provider works offl
 uses each node's configured local provider. See [docs/gui.md](docs/gui.md) for the API,
 page requirements, and security model.
 
+## Evaluation and profiles
+
+The measurement layer is runnable offline:
+
+```text
+uv run mg eval node --suite evals/mock/js-specialist --provider mock
+uv run mg eval routing --suite evals/mock/triage --provider mock
+uv run mg eval e2e --suite evals/e2e/composed-assistant \
+  --graph examples/composed-assistant.graph.yaml --provider mock --profile local-8gb
+make eval-gates
+```
+
+`mg eval compare` enforces the contribution gates against committed baselines. Run profiles
+prune branches the machine cannot serve; `mg run --profile examples/profiles/local-4gb.yaml`
+removes the 6GB story/coder branches and reports the removals.
+
 ## Design principles
 
 1. **Language is the wire.** Any model that can chat can join the graph. No shared
@@ -133,6 +149,7 @@ page requirements, and security model.
 | [`docs/performance.md`](docs/performance.md) | LLM-parity analysis, options compared, overhead budget, compilation targets |
 | [`docs/iteration.md`](docs/iteration.md) | Iteration loops, swap impact, atomic revisions, canary/rollback |
 | [`docs/gui.md`](docs/gui.md) | Local GUI architecture, JSON API, page contract, security |
+| [`docs/profiles.md`](docs/profiles.md) | Run profiles, capability pruning, and lazy loading |
 | [`docs/training.md`](docs/training.md) | Independent specialist and router training, data flywheel |
 | [`docs/evaluation.md`](docs/evaluation.md) | Metrics, suites, baselines, contribution gates |
 | [`docs/roadmap.md`](docs/roadmap.md) | Phases, milestones, sequencing, risk register summary |

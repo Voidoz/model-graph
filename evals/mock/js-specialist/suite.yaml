@@ -1,0 +1,43 @@
+apiVersion: modelgraph/eval/v0
+kind: EvalSuite
+metadata:
+  id: mock/js-specialist
+  name: JavaScript specialist node suite (mock)
+  version: 1.0.0
+  description: >-
+    Offline smoke suite for node evaluation. It renders the js-specialist node view, serves
+    scripted mock responses, and checks code-shaped artifacts with deterministic checks.
+  labels:
+    level: node
+    domain: coding
+    provider: mock
+  authors:
+    - Model Graph contributors
+  license: CC0-1.0
+spec:
+  level: node
+  provider: mock
+  claim: >-
+    The node harness renders the exact node prompt, applies deterministic checks, and emits a
+    reproducible report. This suite does not claim model quality; it validates the instrument.
+  target:
+    graph: examples/coding-specialist.graph.yaml
+    node: js-specialist
+  metric: task_success
+  thresholds:
+    task_success: 1.0
+    validity: 1.0
+    protocol_error_rate: 0.0
+    cost_per_task_usd: 0.0
+  budget:
+    max_cost_usd: 0.05
+    max_tokens: 200000
+  selection:
+    reason: The fixture suite is deliberately small and runs offline in CI.
+  provenance:
+    source: Hand-written prompts and scripted mock responses.
+    contamination: checked
+    notes: No benchmark or training data is copied into this suite.
+  cases: cases.jsonl
+  judge:
+    enabled: false

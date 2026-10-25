@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from modelgraph.contracts.constraints import (
+    ArtifactName,
+    GraphId,
+    NodeId,
+    Semver,
+    SubgraphRef,
+)
 
 
 class ArtifactType(StrEnum):
@@ -30,6 +38,26 @@ class JoinerStrategy(StrEnum):
     synthesize = "synthesize"
 
 
+class OverflowPolicy(StrEnum):
+    error = "error"
+    truncate = "truncate"
+
+
+class RoutingSelection(StrEnum):
+    single = "single"
+
+
+class LowConfidenceAction(StrEnum):
+    error = "error"
+    fallback = "fallback"
+    retry = "retry"
+
+
+class BudgetExhaustedAction(StrEnum):
+    fail = "fail"
+    best_effort = "best_effort"
+
+
 class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -39,9 +67,9 @@ class Labels(_Model):
 
 
 class GraphMetadata(_Model):
-    id: str
+    id: GraphId
     name: str
-    version: str
+    version: Semver
     description: str
     labels: dict[str, str] = Field(default_factory=dict)
     authors: list[str] | None = None
@@ -50,7 +78,7 @@ class GraphMetadata(_Model):
 
 
 class ArtifactInput(_Model):
-    name: str
+    name: ArtifactName
     type: ArtifactType
     required: bool = True
     description: str | None = None
@@ -58,7 +86,7 @@ class ArtifactInput(_Model):
 
 
 class ArtifactWrite(_Model):
-    name: str
+    name: ArtifactName
     type: ArtifactType
     description: str | None = None
     media_type: str | None = None
@@ -70,32 +98,32 @@ class Limits(_Model):
     temperature: float | None = None
     top_p: float | None = None
     timeout_seconds: float | None = None
-    on_overflow: str = "error"
+    on_overflow: OverflowPolicy = OverflowPolicy.error
 
 
 class RoutingConfig(_Model):
-    selection: str = "single"
+    selection: RoutingSelection = RoutingSelection.single
     confidence_threshold: float = 0.7
-    on_low_confidence: str = "error"
+    on_low_confidence: LowConfidenceAction = LowConfidenceAction.error
     max_retries: int = 1
     allow_direct_answer: bool = False
 
 
 class Node(_Model):
-    id: str
+    id: NodeId
     kind: NodeKind
     description: str
     labels: dict[str, str] = Field(default_factory=dict)
-    reads: list[str] = Field(default_factory=list)
+    reads: list[ArtifactName] = Field(default_factory=list)
     writes: list[ArtifactWrite] = Field(default_factory=list)
     model: str | None = None
     instruction: str | None = None
     routing: RoutingConfig | None = None
     limits: Limits | None = None
     routing_card: str | None = None
-    graph: str | None = None
-    input_map: dict[str, str] | None = None
-    output_map: dict[str, str] | None = None
+    graph: SubgraphRef | None = None
+    input_map: dict[str, ArtifactName] | None = None
+    output_map: dict[str, ArtifactName] | None = None
     strategy: JoinerStrategy | None = None
 
     @model_validator(mode="after")
@@ -133,8 +161,8 @@ class Node(_Model):
 
 
 class Edge(_Model):
-    from_: str = Field(alias="from")
-    to: str
+    from_: NodeId = Field(alias="from")
+    to: NodeId
     when: str | None = None
     examples: list[str] = Field(default_factory=list)
     artifact: ArtifactType | None = None
@@ -147,22 +175,22 @@ class Defaults(_Model):
     max_total_tokens: int = 32_000
     max_cost_usd: float = 0.25
     max_wall_seconds: float = 300.0
-    on_budget_exhausted: str = "fail"
+    on_budget_exhausted: BudgetExhaustedAction = BudgetExhaustedAction.fail
 
 
 class GraphSpec(_Model):
-    entry: str
-    exit: list[str]
+    entry: NodeId
+    exit: list[ArtifactName]
     inputs: list[ArtifactInput] = Field(default_factory=list)
-    fallback: str | None = None
+    fallback: NodeId | None = None
     defaults: Defaults = Field(default_factory=Defaults)
     nodes: list[Node]
     edges: list[Edge]
 
 
 class GraphDocument(_Model):
-    apiVersion: str
-    kind: str
+    apiVersion: Literal["modelgraph/v0"]
+    kind: Literal["Graph"]
     metadata: GraphMetadata
     spec: GraphSpec
 

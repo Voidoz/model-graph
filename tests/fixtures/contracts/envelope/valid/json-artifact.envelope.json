@@ -1,0 +1,66 @@
+{
+  "schema": "modelgraph/envelope/v0",
+  "run": {
+    "id": "run_fixture_json",
+    "graph": {
+      "id": "fixture-joiner",
+      "version": "1.0.0",
+      "hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    "parent_run_id": "run_fixture_parent",
+    "depth": 1,
+    "step": 3,
+    "path": [
+      {
+        "node": "draft",
+        "kind": "worker"
+      },
+      {
+        "node": "polish",
+        "kind": "joiner"
+      }
+    ],
+    "budget": {
+      "max_steps": 6,
+      "used_steps": 3,
+      "max_depth": 2,
+      "max_total_tokens": 8000,
+      "used_tokens": 1200,
+      "max_cost_usd": 0.05,
+      "used_cost_usd": 0.0,
+      "max_wall_seconds": 60,
+      "elapsed_seconds": 1.5,
+      "on_budget_exhausted": "best_effort"
+    },
+    "started_at": "2026-10-22T10:01:00Z",
+    "seed": null
+  },
+  "request": {
+    "task": "Return a JSON object with two keys.",
+    "constraints": {
+      "output_format": "json"
+    }
+  },
+  "inputs": [
+    {
+      "name": "task",
+      "type": "text",
+      "content": "Return a JSON object with two keys.",
+      "producer": "$input",
+      "created_at": "2026-10-22T10:01:00Z"
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "answer",
+      "type": "json",
+      "media_type": "application/json",
+      "content": "{\"ok\": true, \"count\": 2}",
+      "producer": "polish",
+      "created_at": "2026-10-22T10:01:02Z",
+      "metadata": {
+        "strict_json": true
+      }
+    }
+  ]
+}

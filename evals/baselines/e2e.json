@@ -1,0 +1,2235 @@
+{
+  "schema": "modelgraph/eval-report/v0",
+  "report_id": "eval_34692be2",
+  "level": "e2e",
+  "claim": "The e2e harness can measure whole-graph task success, validity, cost, latency, and hops against best-single, cheapest, oracle, and random baselines with deterministic mock data.",
+  "generated_at": "2026-10-25T04:35:36Z",
+  "suite": {
+    "id": "e2e/composed-assistant",
+    "name": "Composed assistant end-to-end suite (mock)",
+    "version": "1.0.0",
+    "description": "Offline end-to-end fixture for the composed assistant. It runs the nested coding graph and the storyteller through the real runtime, grades the exit artifact, and derives best-single, cheapest, oracle, and random-routing baselines from the same cases. One case is a deliberate routing loss and one is a deliberate validity failure so the report includes failure slices.",
+    "hash": "sha256:49037fcc67304795d16c47bca1d340180eff0d2cfba0508c30962a077e1c1ecd",
+    "path": "/home/oscar/Projects/model-graph/evals/e2e/composed-assistant/suite.yaml",
+    "level": "e2e",
+    "claim": "The e2e harness can measure whole-graph task success, validity, cost, latency, and hops against best-single, cheapest, oracle, and random baselines with deterministic mock data.",
+    "labels": {
+      "level": "e2e",
+      "domain": "general",
+      "provider": "mock"
+    }
+  },
+  "graph": {
+    "id": "composed-assistant",
+    "version": "1.0.0",
+    "hash": "sha256:2a2379797c7875cd9efd520fd0ed58a895d432d62ad62e1b0010621a25915358",
+    "path": "/home/oscar/Projects/model-graph/examples/composed-assistant.graph.yaml"
+  },
+  "target": {
+    "level": "e2e",
+    "graph": "composed-assistant",
+    "entry": "domain-triage",
+    "nodes": 3,
+    "exits": [
+      "answer"
+    ],
+    "suite_graph": "examples/composed-assistant.graph.yaml",
+    "profile": "local-8gb",
+    "pruned": true,
+    "prune_removed_nodes": 0,
+    "selection": {
+      "requested_case_ids": [
+        "js-debounce",
+        "js-types",
+        "general-rust",
+        "story-lighthouse",
+        "story-misrouted"
+      ],
+      "requested_tags": [],
+      "tag_mode": "any",
+      "limit": null,
+      "selected_cases": 5,
+      "total_cases": 6,
+      "selected_case_ids": [
+        "js-debounce",
+        "js-types",
+        "general-rust",
+        "story-lighthouse",
+        "story-misrouted"
+      ],
+      "reason": "Six hand-written cases run offline and cover success, routing loss, and validity loss."
+    }
+  },
+  "provider": {
+    "kind": "mock",
+    "gated_live": false,
+    "live_gate_env": "MG_EVAL_LIVE",
+    "deterministic_expected": true,
+    "suite_provider": "mock"
+  },
+  "command": "mg eval e2e --suite /home/oscar/Projects/model-graph/evals/e2e/composed-assistant/suite.yaml --graph /home/oscar/Projects/model-graph/examples/composed-assistant.graph.yaml --provider mock --reports-dir /home/oscar/Projects/model-graph/runs/baselines --case js-debounce --case js-types --case general-rust --case story-lighthouse --case story-misrouted --profile /home/oscar/Projects/model-graph/examples/profiles/local-8gb.yaml",
+  "commands": [
+    "mg eval e2e --suite /home/oscar/Projects/model-graph/evals/e2e/composed-assistant/suite.yaml --graph /home/oscar/Projects/model-graph/examples/composed-assistant.graph.yaml --provider mock --reports-dir /home/oscar/Projects/model-graph/runs/baselines --case js-debounce --case js-types --case general-rust --case story-lighthouse --case story-misrouted --profile /home/oscar/Projects/model-graph/examples/profiles/local-8gb.yaml",
+    "python -c \"from modelgraph.evaluation import run_e2e_suite; run_e2e_suite('/home/oscar/Projects/model-graph/evals/e2e/composed-assistant/suite.yaml', graph_path='/home/oscar/Projects/model-graph/examples/composed-assistant.graph.yaml', provider='mock', reports_dir='/home/oscar/Projects/model-graph/runs/baselines', profile='/home/oscar/Projects/model-graph/examples/profiles/local-8gb.yaml')\""
+  ],
+  "reproduce": "python -c \"from modelgraph.evaluation import run_e2e_suite; run_e2e_suite('/home/oscar/Projects/model-graph/evals/e2e/composed-assistant/suite.yaml', graph_path='/home/oscar/Projects/model-graph/examples/composed-assistant.graph.yaml', provider='mock', reports_dir='/home/oscar/Projects/model-graph/runs/baselines', profile='/home/oscar/Projects/model-graph/examples/profiles/local-8gb.yaml')\"",
+  "run_manifest": "manifest.json",
+  "environment": {
+    "python": "3.12.15",
+    "platform": "Linux-7.3.0-4-cachyos-x86_64-with-glibc2.44",
+    "modelgraph_version": "0.2.0",
+    "cwd": "/home/oscar/Projects/model-graph",
+    "git_commit": "d1aceafcc8ef46697567babf682cb25125c2eecf"
+  },
+  "selection": {
+    "requested_case_ids": [
+      "js-debounce",
+      "js-types",
+      "general-rust",
+      "story-lighthouse",
+      "story-misrouted"
+    ],
+    "requested_tags": [],
+    "tag_mode": "any",
+    "limit": null,
+    "selected_cases": 5,
+    "total_cases": 6,
+    "selected_case_ids": [
+      "js-debounce",
+      "js-types",
+      "general-rust",
+      "story-lighthouse",
+      "story-misrouted"
+    ],
+    "reason": "Six hand-written cases run offline and cover success, routing loss, and validity loss.",
+    "baseline_cases": {
+      "best_single": 5,
+      "cheapest_capable": 5,
+      "oracle_routing": 5,
+      "random_routing": 5
+    }
+  },
+  "budget": {
+    "suite": {
+      "max_cost_usd": 0.05,
+      "max_tokens": 200000
+    },
+    "runtime_defaults": {
+      "max_steps": 8,
+      "max_depth": 3,
+      "max_total_tokens": 32000,
+      "max_cost_usd": 0.1,
+      "max_wall_seconds": 300.0,
+      "on_budget_exhausted": "fail"
+    },
+    "profile": {
+      "name": "local-8gb",
+      "network": "loopback",
+      "gpu": true,
+      "max_vram_gb": 8.0,
+      "max_ram_gb": 32.0,
+      "max_disk_gb": 50.0,
+      "providers": [
+        "ollama",
+        "llamacpp",
+        "mock"
+      ],
+      "licenses": [
+        "apache-2.0",
+        "mit"
+      ],
+      "max_cost_usd": 0.0,
+      "budget_overrides": {
+        "max_steps": 8
+      },
+      "backend": "auto",
+      "allow_unknown_cost": false
+    },
+    "profile_path": "/home/oscar/Projects/model-graph/examples/profiles/local-8gb.yaml",
+    "stopped": false,
+    "stop_reason": null
+  },
+  "metrics": {
+    "cases": 5,
+    "task_success": 0.8,
+    "task_success_ci95": [
+      0.3755282641185388,
+      0.9637768390302125
+    ],
+    "weighted_task_success": 0.8,
+    "validity": 1.0,
+    "validity_ci95": [
+      0.5655085052479191,
+      1.0
+    ],
+    "run_success_rate": 1.0,
+    "run_success_rate_ci95": [
+      0.5655085052479191,
+      1.0
+    ],
+    "check_pass_rate": 0.8571428571428571,
+    "quality_score": null,
+    "quality_score_ci95": null,
+    "judged_cases": 0,
+    "cost_total_usd": 0.0,
+    "cost_per_task_usd": 0.0,
+    "cost_per_task_usd_ci95": [
+      0.0,
+      0.0
+    ],
+    "quality_per_dollar": null,
+    "input_tokens": 4707,
+    "output_tokens": 309,
+    "total_tokens": 5016,
+    "latency_mean_seconds": 0.0007854060000681784,
+    "latency_p50_seconds": 0.0007648259997949935,
+    "latency_p95_seconds": 0.0009648792003645213,
+    "latency_p95_seconds_ci95": [
+      0.0007631459997355706,
+      0.0010096550004163873
+    ],
+    "hop_count_mean": 3.6,
+    "hop_count_p50": 4.0,
+    "hop_count_p95": 4.0,
+    "hop_count_max": 4.0,
+    "protocol_error_rate": 0.0,
+    "protocol_errors_per_100_calls": 0.0,
+    "provider_calls": 14,
+    "failure_count": 1
+  },
+  "primary_metric": {
+    "name": "task_success",
+    "value": 0.8,
+    "ci95": [
+      0.3755282641185388,
+      0.9637768390302125
+    ],
+    "threshold": 0.6,
+    "direction": "max",
+    "passed": true
+  },
+  "thresholds": [
+    {
+      "metric": "cost_per_task_usd",
+      "threshold": 0.0,
+      "value": 0.0,
+      "direction": "min",
+      "passed": true
+    },
+    {
+      "metric": "protocol_error_rate",
+      "threshold": 0.2,
+      "value": 0.0,
+      "direction": "min",
+      "passed": true
+    },
+    {
+      "metric": "task_success",
+      "threshold": 0.6,
+      "value": 0.8,
+      "direction": "max",
+      "passed": true
+    },
+    {
+      "metric": "validity",
+      "threshold": 0.8,
+      "value": 1.0,
+      "direction": "max",
+      "passed": true
+    }
+  ],
+  "gate": {
+    "passed": true,
+    "checks": [
+      {
+        "metric": "cost_per_task_usd",
+        "threshold": 0.0,
+        "value": 0.0,
+        "direction": "min",
+        "passed": true
+      },
+      {
+        "metric": "protocol_error_rate",
+        "threshold": 0.2,
+        "value": 0.0,
+        "direction": "min",
+        "passed": true
+      },
+      {
+        "metric": "task_success",
+        "threshold": 0.6,
+        "value": 0.8,
+        "direction": "max",
+        "passed": true
+      },
+      {
+        "metric": "validity",
+        "threshold": 0.8,
+        "value": 1.0,
+        "direction": "max",
+        "passed": true
+      }
+    ],
+    "failures": []
+  },
+  "cases": [
+    {
+      "case_id": "js-debounce",
+      "tags": [
+        "domain:js",
+        "difficulty:easy"
+      ],
+      "task": "Write a debounce function in TypeScript.",
+      "input_artifacts": [],
+      "weight": 1.0,
+      "metadata": {},
+      "outcome": "succeeded",
+      "valid": true,
+      "success": true,
+      "run_success": true,
+      "quality": null,
+      "checks_passed": true,
+      "check_results": [
+        {
+          "type": "contains",
+          "artifact": "answer",
+          "passed": true,
+          "detail": "contains 'debounce'",
+          "score": null,
+          "skipped": false,
+          "data": {
+            "normalize": "none"
+          }
+        },
+        {
+          "type": "regex",
+          "artifact": "answer",
+          "passed": true,
+          "detail": "matched 'function debounce'",
+          "score": null,
+          "skipped": false,
+          "data": {
+            "match": "function debounce"
+          }
+        }
+      ],
+      "checks_total": 2,
+      "checks_passed_count": 2,
+      "judge_called": false,
+      "judge_error": null,
+      "artifacts": [
+        {
+          "name": "answer",
+          "type": "text",
+          "media_type": "text/plain",
+          "producer": "coding",
+          "content": "export function debounce(fn: () => void, ms = 200) { let timer: number | undefined; return () => { if (timer) clearTimeout(timer); timer = setTimeout(fn, ms); }; }",
+          "hash": "sha256:613c92951d3c07b951696e94dc175e3d72d2c91aa1e5d3075f821b37b2bae37e",
+          "bytes": 163,
+          "metadata": {
+            "subgraph_run_id": "run_41135de8",
+            "inner_artifact": "answer"
+          }
+        }
+      ],
+      "responses": [
+        {
+          "text": "{\"decision\": \"route\", \"to\": \"coding\", \"confidence\": 0.95, \"reason\": \"code request\"}",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 419,
+            "output_tokens": 21,
+            "total_tokens": 440,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        },
+        {
+          "text": "{\"decision\": \"route\", \"to\": \"js-specialist\", \"confidence\": 0.9, \"reason\": \"typescript\"}",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 428,
+            "output_tokens": 22,
+            "total_tokens": 450,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        },
+        {
+          "text": "export function debounce(fn: () => void, ms = 200) { let timer: number | undefined; return () => { if (timer) clearTimeout(timer); timer = setTimeout(fn, ms); }; }",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 189,
+            "output_tokens": 41,
+            "total_tokens": 230,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        }
+      ],
+      "finish_reasons": [
+        "stop",
+        "stop",
+        "stop"
+      ],
+      "path": [
+        {
+          "node": "domain-triage",
+          "kind": "router",
+          "decision": "route",
+          "to": "coding",
+          "confidence": 0.95,
+          "reason": "code request"
+        },
+        {
+          "node": "coding",
+          "kind": "subgraph",
+          "graph": "coding-specialist@1.0.0",
+          "graph_hash": "sha256:38ee1a8d216ac093e5fa33eea5fd691c16fbfc32d0a640ae1ce1ff77acb79087"
+        }
+      ],
+      "hop_count": 4,
+      "decisions": [
+        {
+          "node": "domain-triage",
+          "decision": "route",
+          "to": "coding",
+          "confidence": 0.95,
+          "reason": "code request"
+        },
+        {
+          "node": "coding-triage",
+          "decision": "route",
+          "to": "js-specialist",
+          "confidence": 0.9,
+          "reason": "typescript"
+        }
+      ],
+      "first_router": "domain-triage",
+      "chosen_route": "coding",
+      "run_id": "run_dfee6ad0",
+      "run_manifest": null,
+      "run_manifest_hash": null,
+      "usage": {
+        "steps": 4,
+        "input_tokens": 1036,
+        "output_tokens": 84,
+        "total_tokens": 1120,
+        "cost_usd": 0.0,
+        "elapsed_seconds": 0.001
+      },
+      "cost_usd": 0.0,
+      "latency_seconds": 0.0010096550004163873,
+      "provider_calls": 3,
+      "render_hashes": [
+        "sha256:be66d593bb9a9c16915b90214f920eaf04286d18ba3b59984b5151e5adbc1dd1",
+        "sha256:7ff6b64a6e2e87418134686ca30abc26a347c072fe9102d49296c5cf130fd14b",
+        "sha256:4204f39c2a4ef176bc8e6a9312d2ca10bd9c790df1208ab4862b045ad6d1f788"
+      ],
+      "protocol_errors": [],
+      "validity_issues": [],
+      "error": null,
+      "trial": "graph",
+      "oracle_route": "coding",
+      "oracle_ambiguous": false,
+      "oracle_quality_by_route": {
+        "coding": 1.0,
+        "story": 0.0
+      },
+      "route_correct": true
+    },
+    {
+      "case_id": "js-types",
+      "tags": [
+        "domain:js",
+        "difficulty:medium"
+      ],
+      "task": "Add types to this React hook.",
+      "input_artifacts": [],
+      "weight": 1.0,
+      "metadata": {},
+      "outcome": "succeeded",
+      "valid": true,
+      "success": true,
+      "run_success": true,
+      "quality": null,
+      "checks_passed": true,
+      "check_results": [
+        {
+          "type": "contains",
+          "artifact": "answer",
+          "passed": true,
+          "detail": "contains 'useCounter'",
+          "score": null,
+          "skipped": false,
+          "data": {
+            "normalize": "none"
+          }
+        },
+        {
+          "type": "contains",
+          "artifact": "answer",
+          "passed": true,
+          "detail": "contains 'Props'",
+          "score": null,
+          "skipped": false,
+          "data": {
+            "normalize": "none"
+          }
+        }
+      ],
+      "checks_total": 2,
+      "checks_passed_count": 2,
+      "judge_called": false,
+      "judge_error": null,
+      "artifacts": [
+        {
+          "name": "answer",
+          "type": "text",
+          "media_type": "text/plain",
+          "producer": "coding",
+          "content": "type Props = { start: number }; export function useCounter({ start }: Props) { return start; }",
+          "hash": "sha256:2b5c05a92ec009efab3e8bcd34d51a278c08bde7e920b1fa08b8df879d1a117d",
+          "bytes": 94,
+          "metadata": {
+            "subgraph_run_id": "run_659a208c",
+            "inner_artifact": "answer"
+          }
+        }
+      ],
+      "responses": [
+        {
+          "text": "{\"decision\": \"route\", \"to\": \"coding\", \"confidence\": 0.92, \"reason\": \"code request\"}",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 416,
+            "output_tokens": 21,
+            "total_tokens": 437,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        },
+        {
+          "text": "{\"decision\": \"route\", \"to\": \"js-specialist\", \"confidence\": 0.88, \"reason\": \"react typescript\"}",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 425,
+            "output_tokens": 24,
+            "total_tokens": 449,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        },
+        {
+          "text": "type Props = { start: number }; export function useCounter({ start }: Props) { return start; }",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 183,
+            "output_tokens": 24,
+            "total_tokens": 207,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        }
+      ],
+      "finish_reasons": [
+        "stop",
+        "stop",
+        "stop"
+      ],
+      "path": [
+        {
+          "node": "domain-triage",
+          "kind": "router",
+          "decision": "route",
+          "to": "coding",
+          "confidence": 0.92,
+          "reason": "code request"
+        },
+        {
+          "node": "coding",
+          "kind": "subgraph",
+          "graph": "coding-specialist@1.0.0",
+          "graph_hash": "sha256:38ee1a8d216ac093e5fa33eea5fd691c16fbfc32d0a640ae1ce1ff77acb79087"
+        }
+      ],
+      "hop_count": 4,
+      "decisions": [
+        {
+          "node": "domain-triage",
+          "decision": "route",
+          "to": "coding",
+          "confidence": 0.92,
+          "reason": "code request"
+        },
+        {
+          "node": "coding-triage",
+          "decision": "route",
+          "to": "js-specialist",
+          "confidence": 0.88,
+          "reason": "react typescript"
+        }
+      ],
+      "first_router": "domain-triage",
+      "chosen_route": "coding",
+      "run_id": "run_944f252d",
+      "run_manifest": null,
+      "run_manifest_hash": null,
+      "usage": {
+        "steps": 4,
+        "input_tokens": 1024,
+        "output_tokens": 69,
+        "total_tokens": 1093,
+        "cost_usd": 0.0,
+        "elapsed_seconds": 0.0
+      },
+      "cost_usd": 0.0,
+      "latency_seconds": 0.0007857760001570568,
+      "provider_calls": 3,
+      "render_hashes": [
+        "sha256:b628d3759a2f627f8e480b26cdb4d6460a09fc4fcad94f83ae730fd501ee6a99",
+        "sha256:abd1d2beab29c7b1fabc99e5ce8c46d010219e18cda4a56b85fee9cf38a97f56",
+        "sha256:e01f76f6c1b53ccba327a14b1efac175f0b5a8aa938ca65d3d404f3fe4ee2abb"
+      ],
+      "protocol_errors": [],
+      "validity_issues": [],
+      "error": null,
+      "trial": "graph",
+      "oracle_route": "coding",
+      "oracle_ambiguous": false,
+      "oracle_quality_by_route": {
+        "coding": 1.0,
+        "story": 0.0
+      },
+      "route_correct": true
+    },
+    {
+      "case_id": "general-rust",
+      "tags": [
+        "domain:general",
+        "difficulty:medium"
+      ],
+      "task": "Implement quicksort in Rust.",
+      "input_artifacts": [],
+      "weight": 1.0,
+      "metadata": {},
+      "outcome": "succeeded",
+      "valid": true,
+      "success": true,
+      "run_success": true,
+      "quality": null,
+      "checks_passed": true,
+      "check_results": [
+        {
+          "type": "contains",
+          "artifact": "answer",
+          "passed": true,
+          "detail": "contains 'fn quicksort'",
+          "score": null,
+          "skipped": false,
+          "data": {
+            "normalize": "none"
+          }
+        }
+      ],
+      "checks_total": 1,
+      "checks_passed_count": 1,
+      "judge_called": false,
+      "judge_error": null,
+      "artifacts": [
+        {
+          "name": "answer",
+          "type": "text",
+          "media_type": "text/plain",
+          "producer": "coding",
+          "content": "fn quicksort(mut values: Vec<i32>) -> Vec<i32> { values.sort(); values }",
+          "hash": "sha256:0e6fa45ed737a378abe1b28fde71bf4fcde1cc459a25a2076f41af8632fdc789",
+          "bytes": 72,
+          "metadata": {
+            "subgraph_run_id": "run_45dbbf84",
+            "inner_artifact": "answer"
+          }
+        }
+      ],
+      "responses": [
+        {
+          "text": "{\"decision\": \"route\", \"to\": \"coding\", \"confidence\": 0.9, \"reason\": \"programming request\"}",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 416,
+            "output_tokens": 23,
+            "total_tokens": 439,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        },
+        {
+          "text": "{\"decision\": \"route\", \"to\": \"generic-coder\", \"confidence\": 0.85, \"reason\": \"rust not typescript\"}",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 425,
+            "output_tokens": 25,
+            "total_tokens": 450,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        },
+        {
+          "text": "fn quicksort(mut values: Vec<i32>) -> Vec<i32> { values.sort(); values }",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 181,
+            "output_tokens": 18,
+            "total_tokens": 199,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        }
+      ],
+      "finish_reasons": [
+        "stop",
+        "stop",
+        "stop"
+      ],
+      "path": [
+        {
+          "node": "domain-triage",
+          "kind": "router",
+          "decision": "route",
+          "to": "coding",
+          "confidence": 0.9,
+          "reason": "programming request"
+        },
+        {
+          "node": "coding",
+          "kind": "subgraph",
+          "graph": "coding-specialist@1.0.0",
+          "graph_hash": "sha256:38ee1a8d216ac093e5fa33eea5fd691c16fbfc32d0a640ae1ce1ff77acb79087"
+        }
+      ],
+      "hop_count": 4,
+      "decisions": [
+        {
+          "node": "domain-triage",
+          "decision": "route",
+          "to": "coding",
+          "confidence": 0.9,
+          "reason": "programming request"
+        },
+        {
+          "node": "coding-triage",
+          "decision": "route",
+          "to": "generic-coder",
+          "confidence": 0.85,
+          "reason": "rust not typescript"
+        }
+      ],
+      "first_router": "domain-triage",
+      "chosen_route": "coding",
+      "run_id": "run_8c21fb53",
+      "run_manifest": null,
+      "run_manifest_hash": null,
+      "usage": {
+        "steps": 4,
+        "input_tokens": 1022,
+        "output_tokens": 66,
+        "total_tokens": 1088,
+        "cost_usd": 0.0,
+        "elapsed_seconds": 0.0
+      },
+      "cost_usd": 0.0,
+      "latency_seconds": 0.0007648259997949935,
+      "provider_calls": 3,
+      "render_hashes": [
+        "sha256:382a01ae695f027fa22975c1ed94bdc95634a3f0db53ddb38bc6330e30fc0800",
+        "sha256:5d01b92747719b17a52898d27a6222f51db836797cb7c5cbc82a4562eca407d0",
+        "sha256:14c162341c23b0c652c8f4f265bc8fab773fe2e24e3a22c7f1bb8636531350b2"
+      ],
+      "protocol_errors": [],
+      "validity_issues": [],
+      "error": null,
+      "trial": "graph",
+      "oracle_route": "coding",
+      "oracle_ambiguous": false,
+      "oracle_quality_by_route": {
+        "coding": 1.0,
+        "story": 0.0
+      },
+      "route_correct": true
+    },
+    {
+      "case_id": "story-lighthouse",
+      "tags": [
+        "domain:writing",
+        "difficulty:easy"
+      ],
+      "task": "Tell me a story about a lighthouse keeper.",
+      "input_artifacts": [],
+      "weight": 1.0,
+      "metadata": {},
+      "outcome": "succeeded",
+      "valid": true,
+      "success": true,
+      "run_success": true,
+      "quality": null,
+      "checks_passed": true,
+      "check_results": [
+        {
+          "type": "contains",
+          "artifact": "answer",
+          "passed": true,
+          "detail": "contains 'lighthouse'",
+          "score": null,
+          "skipped": false,
+          "data": {
+            "normalize": "none"
+          }
+        }
+      ],
+      "checks_total": 1,
+      "checks_passed_count": 1,
+      "judge_called": false,
+      "judge_error": null,
+      "artifacts": [
+        {
+          "name": "answer",
+          "type": "text",
+          "media_type": "text/markdown",
+          "producer": "story",
+          "content": "The lighthouse keeper counted the waves until the light answered.",
+          "hash": "sha256:fce5168847f2417185898a7fa1fcf6ac5c439e541604e7ac25e119e42bb5361c",
+          "bytes": 65,
+          "metadata": {}
+        }
+      ],
+      "responses": [
+        {
+          "text": "{\"decision\": \"route\", \"to\": \"story\", \"confidence\": 0.96, \"reason\": \"creative writing\"}",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 419,
+            "output_tokens": 22,
+            "total_tokens": 441,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        },
+        {
+          "text": "The lighthouse keeper counted the waves until the light answered.",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 169,
+            "output_tokens": 17,
+            "total_tokens": 186,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        }
+      ],
+      "finish_reasons": [
+        "stop",
+        "stop"
+      ],
+      "path": [
+        {
+          "node": "domain-triage",
+          "kind": "router",
+          "decision": "route",
+          "to": "story",
+          "confidence": 0.96,
+          "reason": "creative writing"
+        },
+        {
+          "node": "story",
+          "kind": "worker"
+        }
+      ],
+      "hop_count": 2,
+      "decisions": [
+        {
+          "node": "domain-triage",
+          "decision": "route",
+          "to": "story",
+          "confidence": 0.96,
+          "reason": "creative writing"
+        }
+      ],
+      "first_router": "domain-triage",
+      "chosen_route": "story",
+      "run_id": "run_0829d43e",
+      "run_manifest": null,
+      "run_manifest_hash": null,
+      "usage": {
+        "steps": 2,
+        "input_tokens": 588,
+        "output_tokens": 39,
+        "total_tokens": 627,
+        "cost_usd": 0.0,
+        "elapsed_seconds": 0.0
+      },
+      "cost_usd": 0.0,
+      "latency_seconds": 0.0006103470004745759,
+      "provider_calls": 2,
+      "render_hashes": [
+        "sha256:521cfa43fc4bc32f526c2d5c8bdf90d82ab0a43d75ae0fdab984ce052af17f29",
+        "sha256:3d64cb947ea45ba161e9f078a401ec0bc869e0c825b1345a95b36a0ea1a7a543"
+      ],
+      "protocol_errors": [],
+      "validity_issues": [],
+      "error": null,
+      "trial": "graph",
+      "oracle_route": "story",
+      "oracle_ambiguous": false,
+      "oracle_quality_by_route": {
+        "coding": 0.0,
+        "story": 1.0
+      },
+      "route_correct": true
+    },
+    {
+      "case_id": "story-misrouted",
+      "tags": [
+        "domain:writing",
+        "difficulty:medium"
+      ],
+      "task": "Write a short story about a fox and a star.",
+      "input_artifacts": [],
+      "weight": 1.0,
+      "metadata": {},
+      "outcome": "succeeded",
+      "valid": true,
+      "success": false,
+      "run_success": true,
+      "quality": null,
+      "checks_passed": false,
+      "check_results": [
+        {
+          "type": "contains",
+          "artifact": "answer",
+          "passed": false,
+          "detail": "does not contain 'fox'",
+          "score": null,
+          "skipped": false,
+          "data": {
+            "normalize": "none"
+          }
+        }
+      ],
+      "checks_total": 1,
+      "checks_passed_count": 0,
+      "judge_called": false,
+      "judge_error": null,
+      "artifacts": [
+        {
+          "name": "answer",
+          "type": "text",
+          "media_type": "text/plain",
+          "producer": "coding",
+          "content": "fn main() {}",
+          "hash": "sha256:ef32637cb9c3ec2e3968c9cbdf26a5e9c172be94f88af533e14bd43f892d5297",
+          "bytes": 12,
+          "metadata": {
+            "subgraph_run_id": "run_48e5bda9",
+            "inner_artifact": "answer"
+          }
+        }
+      ],
+      "responses": [
+        {
+          "text": "{\"decision\": \"route\", \"to\": \"coding\", \"confidence\": 0.8, \"reason\": \"deliberate router loss\"}",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 420,
+            "output_tokens": 23,
+            "total_tokens": 443,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        },
+        {
+          "text": "{\"decision\": \"route\", \"to\": \"generic-coder\", \"confidence\": 0.8, \"reason\": \"deliberate router loss\"}",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 429,
+            "output_tokens": 25,
+            "total_tokens": 454,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        },
+        {
+          "text": "fn main() {}",
+          "finish_reason": "stop",
+          "usage": {
+            "input_tokens": 188,
+            "output_tokens": 3,
+            "total_tokens": 191,
+            "approximated": true
+          },
+          "latency_seconds": 0.0,
+          "attempt": 1
+        }
+      ],
+      "finish_reasons": [
+        "stop",
+        "stop",
+        "stop"
+      ],
+      "path": [
+        {
+          "node": "domain-triage",
+          "kind": "router",
+          "decision": "route",
+          "to": "coding",
+          "confidence": 0.8,
+          "reason": "deliberate router loss"
+        },
+        {
+          "node": "coding",
+          "kind": "subgraph",
+          "graph": "coding-specialist@1.0.0",
+          "graph_hash": "sha256:38ee1a8d216ac093e5fa33eea5fd691c16fbfc32d0a640ae1ce1ff77acb79087"
+        }
+      ],
+      "hop_count": 4,
+      "decisions": [
+        {
+          "node": "domain-triage",
+          "decision": "route",
+          "to": "coding",
+          "confidence": 0.8,
+          "reason": "deliberate router loss"
+        },
+        {
+          "node": "coding-triage",
+          "decision": "route",
+          "to": "generic-coder",
+          "confidence": 0.8,
+          "reason": "deliberate router loss"
+        }
+      ],
+      "first_router": "domain-triage",
+      "chosen_route": "coding",
+      "run_id": "run_4114a5b9",
+      "run_manifest": null,
+      "run_manifest_hash": null,
+      "usage": {
+        "steps": 4,
+        "input_tokens": 1037,
+        "output_tokens": 51,
+        "total_tokens": 1088,
+        "cost_usd": 0.0,
+        "elapsed_seconds": 0.0
+      },
+      "cost_usd": 0.0,
+      "latency_seconds": 0.0007564259994978784,
+      "provider_calls": 3,
+      "render_hashes": [
+        "sha256:f35b560fb3716d7076977ffd0736772d79edbf3d3a9650ba3100b8e180915f28",
+        "sha256:bc8311ee84c59c81bc6a16fd4893613176424a5b5acc65fd3f9f341413c6e8fb",
+        "sha256:81731d2aeb075a44d9cf75b6674b9c51dfa2f5ac309b1ed7dae8a893d4a0c333"
+      ],
+      "protocol_errors": [],
+      "validity_issues": [],
+      "error": null,
+      "trial": "graph",
+      "oracle_route": "story",
+      "oracle_ambiguous": false,
+      "oracle_quality_by_route": {
+        "coding": 0.0,
+        "story": 1.0
+      },
+      "route_correct": false
+    }
+  ],
+  "failures": [
+    {
+      "case_id": "story-misrouted",
+      "tags": [
+        "domain:writing",
+        "difficulty:medium"
+      ],
+      "reason": "contains: does not contain 'fox'; oracle route 'story', graph chose 'coding'",
+      "error": null,
+      "failed_checks": [
+        "contains: does not contain 'fox'"
+      ],
+      "valid": true,
+      "chosen_route": "coding",
+      "oracle_route": "story",
+      "oracle_ambiguous": false
+    }
+  ],
+  "slices": {
+    "difficulty:easy": {
+      "cases": 2,
+      "task_success": 1.0,
+      "validity": 1.0,
+      "quality_score": null,
+      "cost_per_task_usd": 0.0,
+      "latency_p95_seconds": 0.0009896896004192967,
+      "hop_count_p95": 3.9,
+      "failure_count": 0
+    },
+    "difficulty:medium": {
+      "cases": 3,
+      "task_success": 0.6666666666666666,
+      "validity": 1.0,
+      "quality_score": null,
+      "cost_per_task_usd": 0.0,
+      "latency_p95_seconds": 0.0007836810001208505,
+      "hop_count_p95": 4.0,
+      "failure_count": 1
+    },
+    "domain:general": {
+      "cases": 1,
+      "task_success": 1.0,
+      "validity": 1.0,
+      "quality_score": null,
+      "cost_per_task_usd": 0.0,
+      "latency_p95_seconds": 0.0007648259997949935,
+      "hop_count_p95": 4.0,
+      "failure_count": 0
+    },
+    "domain:js": {
+      "cases": 2,
+      "task_success": 1.0,
+      "validity": 1.0,
+      "quality_score": null,
+      "cost_per_task_usd": 0.0,
+      "latency_p95_seconds": 0.0009984610504034208,
+      "hop_count_p95": 4.0,
+      "failure_count": 0
+    },
+    "domain:writing": {
+      "cases": 2,
+      "task_success": 0.5,
+      "validity": 1.0,
+      "quality_score": null,
+      "cost_per_task_usd": 0.0,
+      "latency_p95_seconds": 0.0007491220495467133,
+      "hop_count_p95": 3.9,
+      "failure_count": 1
+    }
+  },
+  "protocol_errors": {
+    "total_events": 0,
+    "cases_with_errors": 0,
+    "rate": 0.0,
+    "per_100_calls": 0.0,
+    "by_code": {},
+    "provider_calls": 14
+  },
+  "costs": {
+    "total_usd": 0.0,
+    "per_task_usd": 0.0,
+    "pricing": "manifest-declared",
+    "note": null,
+    "per_task_usd_ci95": [
+      0.0,
+      0.0
+    ]
+  },
+  "latency": {
+    "count": 5,
+    "mean_seconds": 0.0007854060000681784,
+    "p50_seconds": 0.0007648259997949935,
+    "p95_seconds": 0.0009648792003645213,
+    "min_seconds": 0.0006103470004745759,
+    "max_seconds": 0.0010096550004163873,
+    "p95_ci95": [
+      0.0007631459997355706,
+      0.0010096550004163873
+    ]
+  },
+  "usage": {
+    "cases": 5,
+    "input_tokens": 4707,
+    "output_tokens": 309,
+    "total_tokens": 5016,
+    "cost_usd": 0.0,
+    "provider_calls": 14
+  },
+  "determinism": {
+    "scripted_provider": true,
+    "fingerprint": "sha256:f8f19dc4cd05f7388fc855a533bd83724c8f2d05dff7c07d495e98395ddd5458",
+    "excludes": [
+      "generated_at",
+      "report_id",
+      "latency_seconds",
+      "latency_*_seconds",
+      "report_dir",
+      "run_id",
+      "run_manifest",
+      "run_manifests"
+    ]
+  },
+  "limitations": [
+    "The mock provider serves scripted responses; these metrics validate the harness and suite, not model quality.",
+    "Small suite (n=5); treat this as a development smoke result, not a quality claim.",
+    "Wall-clock latency includes harness overhead and varies between runs; it is excluded from the determinism fingerprint.",
+    "Best-single and cheapest-capable baselines run each worker node directly on the full task. They exclude routing and handoff, which is the point of the comparison, but they also ignore the graph's node view and any intermediate artifacts.",
+    "Oracle labels force only the first router's branch. Nested routing is measured through the case's authored mock scripts or live provider behavior, not exhaustively labeled.",
+    "Oracle labeling runs every selected case; stratification is the suite author's selection (tags/limit), not an automatic sample design.",
+    "Costs come from manifest pricing. Free local model manifests report zero marginal cost, so a cost band can collapse to a single $0 point.",
+    "Measured oracle labels are produced by the same checks used for the graph, so a broken check under-labels every branch equally.",
+    "No incumbent report was supplied, so the incumbent baseline is unavailable.",
+    "profile override max_steps=8 ignored because it raises the graph default 6; pass --allow-budget-override to apply it"
+  ],
+  "oracle": {
+    "available": true,
+    "reason": null,
+    "labeler": "measured",
+    "labeled_cases": 5,
+    "ambiguous_cases": 0,
+    "oracle_agreement": 0.8,
+    "oracle_agreement_ci95": [
+      0.3755282641185388,
+      0.9637768390302125
+    ],
+    "oracle_gap": 0.2,
+    "oracle_gap_ci95": [
+      0.0,
+      0.6
+    ],
+    "quality_loss_cases": 5,
+    "labels": [
+      {
+        "case_id": "js-debounce",
+        "tags": [
+          "domain:js",
+          "difficulty:easy"
+        ],
+        "oracle_route": "coding",
+        "quality_by_route": {
+          "coding": 1.0,
+          "story": 0.0
+        },
+        "ambiguous": false,
+        "labeler": "measured",
+        "labeled_at": "2026-10-25T04:35:36Z",
+        "labeling_cost_usd": 0.0,
+        "chosen_route": "coding",
+        "chosen_quality": 1.0,
+        "source": "first-hop-route-probes"
+      },
+      {
+        "case_id": "js-types",
+        "tags": [
+          "domain:js",
+          "difficulty:medium"
+        ],
+        "oracle_route": "coding",
+        "quality_by_route": {
+          "coding": 1.0,
+          "story": 0.0
+        },
+        "ambiguous": false,
+        "labeler": "measured",
+        "labeled_at": "2026-10-25T04:35:36Z",
+        "labeling_cost_usd": 0.0,
+        "chosen_route": "coding",
+        "chosen_quality": 1.0,
+        "source": "first-hop-route-probes"
+      },
+      {
+        "case_id": "general-rust",
+        "tags": [
+          "domain:general",
+          "difficulty:medium"
+        ],
+        "oracle_route": "coding",
+        "quality_by_route": {
+          "coding": 1.0,
+          "story": 0.0
+        },
+        "ambiguous": false,
+        "labeler": "measured",
+        "labeled_at": "2026-10-25T04:35:36Z",
+        "labeling_cost_usd": 0.0,
+        "chosen_route": "coding",
+        "chosen_quality": 1.0,
+        "source": "first-hop-route-probes"
+      },
+      {
+        "case_id": "story-lighthouse",
+        "tags": [
+          "domain:writing",
+          "difficulty:easy"
+        ],
+        "oracle_route": "story",
+        "quality_by_route": {
+          "coding": 0.0,
+          "story": 1.0
+        },
+        "ambiguous": false,
+        "labeler": "measured",
+        "labeled_at": "2026-10-25T04:35:36Z",
+        "labeling_cost_usd": 0.0,
+        "chosen_route": "story",
+        "chosen_quality": 1.0,
+        "source": "first-hop-route-probes"
+      },
+      {
+        "case_id": "story-misrouted",
+        "tags": [
+          "domain:writing",
+          "difficulty:medium"
+        ],
+        "oracle_route": "story",
+        "quality_by_route": {
+          "coding": 0.0,
+          "story": 1.0
+        },
+        "ambiguous": false,
+        "labeler": "measured",
+        "labeled_at": "2026-10-25T04:35:36Z",
+        "labeling_cost_usd": 0.0,
+        "chosen_route": "coding",
+        "chosen_quality": 0.0,
+        "source": "first-hop-route-probes"
+      }
+    ],
+    "labeling": {
+      "labeling_method": "measured-first-hop-route-probes",
+      "sampled_from": "evals/e2e/composed-assistant/cases.jsonl",
+      "ambiguity_rule": "Mark a case ambiguous when the best and second-best measured branch qualities differ by at most oracle_ambiguity_delta, or when the case explicitly says so.",
+      "notes": "Labels are produced by running the graph with the first router forced through each candidate branch and grading the same exit checks. Nested routing follows the case's scripted decisions.",
+      "suite_cost_usd": 0.0,
+      "measured_cost_usd": 0.0,
+      "total_usd": 0.0,
+      "per_case_usd": 0.0
+    }
+  },
+  "calibration": null,
+  "confusion": null,
+  "abstain": null,
+  "judge": null,
+  "comparisons": [
+    {
+      "name": "best_single",
+      "baseline": "best_single",
+      "direction": "max",
+      "paired_cases": 5,
+      "missing_cases": 0,
+      "delta": 0.4,
+      "ci95": [
+        -0.4,
+        1.0
+      ],
+      "effect_size_cohens_d": 0.5,
+      "wins": 3,
+      "losses": 1,
+      "ties": 1,
+      "win_rate": 0.6,
+      "loss_rate": 0.2,
+      "cost_delta_per_task_usd": 0.0,
+      "cost_delta_per_task_usd_ci95": [
+        0.0,
+        0.0
+      ],
+      "latency_delta_p50_seconds": 0.0007166860004872433,
+      "latency_delta_mean_seconds": 0.0007348184000875336,
+      "latency_delta_mean_seconds_ci95": [
+        0.0006258573999730288,
+        0.0008600836001278367
+      ]
+    },
+    {
+      "name": "cheapest_capable",
+      "baseline": "cheapest_capable",
+      "direction": "max",
+      "paired_cases": 5,
+      "missing_cases": 0,
+      "delta": 0.4,
+      "ci95": [
+        0.0,
+        0.8
+      ],
+      "effect_size_cohens_d": 0.8164965809277261,
+      "wins": 2,
+      "losses": 0,
+      "ties": 3,
+      "win_rate": 0.4,
+      "loss_rate": 0.0,
+      "cost_delta_per_task_usd": 0.0,
+      "cost_delta_per_task_usd_ci95": [
+        0.0,
+        0.0
+      ],
+      "latency_delta_p50_seconds": 0.0007122260003598058,
+      "latency_delta_mean_seconds": 0.0007303286000023945,
+      "latency_delta_mean_seconds_ci95": [
+        0.0006222693999006878,
+        0.0008546662000298965
+      ]
+    },
+    {
+      "name": "oracle_routing",
+      "baseline": "oracle_routing",
+      "direction": "max",
+      "paired_cases": 5,
+      "missing_cases": 0,
+      "delta": -0.2,
+      "ci95": [
+        -0.6,
+        0.0
+      ],
+      "effect_size_cohens_d": -0.5,
+      "wins": 0,
+      "losses": 1,
+      "ties": 4,
+      "win_rate": 0.0,
+      "loss_rate": 0.2,
+      "cost_delta_per_task_usd": 0.0,
+      "cost_delta_per_task_usd_ci95": [
+        0.0,
+        0.0
+      ],
+      "latency_delta_p50_seconds": 1.9470000552246347e-05,
+      "latency_delta_mean_seconds": 8.330140026373556e-05,
+      "latency_delta_mean_seconds_ci95": [
+        1.563760051794816e-05,
+        0.00015112940001472364
+      ]
+    },
+    {
+      "name": "random_routing",
+      "baseline": "random_routing",
+      "direction": "max",
+      "paired_cases": 5,
+      "missing_cases": 0,
+      "delta": 0.4,
+      "ci95": [
+        0.0,
+        0.8
+      ],
+      "effect_size_cohens_d": 0.8164965809277261,
+      "wins": 2,
+      "losses": 0,
+      "ties": 3,
+      "win_rate": 0.4,
+      "loss_rate": 0.0,
+      "cost_delta_per_task_usd": 0.0,
+      "cost_delta_per_task_usd_ci95": [
+        0.0,
+        0.0
+      ],
+      "latency_delta_p50_seconds": 1.772900031937752e-05,
+      "latency_delta_mean_seconds": 0.00010836920027941232,
+      "latency_delta_mean_seconds_ci95": [
+        1.4261800242820754e-05,
+        0.00025909460073307854
+      ]
+    }
+  ],
+  "baseline": null,
+  "candidate": null,
+  "e2e": {
+    "profile": {
+      "name": "local-8gb",
+      "network": "loopback",
+      "gpu": true,
+      "max_vram_gb": 8.0,
+      "max_ram_gb": 32.0,
+      "max_disk_gb": 50.0,
+      "providers": [
+        "ollama",
+        "llamacpp",
+        "mock"
+      ],
+      "licenses": [
+        "apache-2.0",
+        "mit"
+      ],
+      "max_cost_usd": 0.0,
+      "budget_overrides": {
+        "max_steps": 8
+      },
+      "backend": "auto",
+      "allow_unknown_cost": false
+    },
+    "profile_path": "/home/oscar/Projects/model-graph/examples/profiles/local-8gb.yaml",
+    "prune": {
+      "profile": "local-8gb",
+      "removed_nodes": [],
+      "removed_edges": [],
+      "removed_exit_artifacts": [],
+      "warnings": []
+    },
+    "baselines": {
+      "best_single": {
+        "cases": 5,
+        "task_success": 0.4,
+        "task_success_ci95": [
+          0.1176182311592533,
+          0.769280067791163
+        ],
+        "weighted_task_success": 0.4,
+        "validity": 1.0,
+        "validity_ci95": [
+          0.5655085052479191,
+          1.0
+        ],
+        "run_success_rate": 1.0,
+        "run_success_rate_ci95": [
+          0.5655085052479191,
+          1.0
+        ],
+        "check_pass_rate": 0.2857142857142857,
+        "quality_score": null,
+        "quality_score_ci95": null,
+        "judged_cases": 0,
+        "cost_total_usd": 0.0,
+        "cost_per_task_usd": 0.0,
+        "cost_per_task_usd_ci95": [
+          0.0,
+          0.0
+        ],
+        "quality_per_dollar": null,
+        "input_tokens": 830,
+        "output_tokens": 46,
+        "total_tokens": 876,
+        "latency_mean_seconds": 5.058759998064488e-05,
+        "latency_p50_seconds": 4.813999930775026e-05,
+        "latency_p95_seconds": 5.632980009977473e-05,
+        "latency_p95_seconds_ci95": [
+          4.812979950656881e-05,
+          5.7019999985641334e-05
+        ],
+        "hop_count_mean": 1.0,
+        "hop_count_p50": 1.0,
+        "hop_count_p95": 1.0,
+        "hop_count_max": 1.0,
+        "protocol_error_rate": 0.0,
+        "protocol_errors_per_100_calls": 0.0,
+        "provider_calls": 5,
+        "failure_count": 3,
+        "name": "best_single",
+        "kind": "best_single",
+        "node": "story",
+        "graph": "composed-assistant",
+        "model": "mistral:7b-instruct",
+        "model_ref": "story-7b",
+        "available": true,
+        "winner": "story",
+        "candidates": [
+          {
+            "name": "generic-coder",
+            "node": "generic-coder",
+            "graph": "coding-specialist",
+            "model": "qwen2.5-coder:7b",
+            "task_success": 0.2,
+            "validity": 1.0,
+            "cost_per_task_usd": 0.0,
+            "latency_p95_seconds": 6.708919972879812e-05,
+            "cases": 5
+          },
+          {
+            "name": "js-specialist",
+            "node": "js-specialist",
+            "graph": "coding-specialist",
+            "model": "qwen2.5-coder:3b",
+            "task_success": 0.4,
+            "validity": 1.0,
+            "cost_per_task_usd": 0.0,
+            "latency_p95_seconds": 6.216700021468568e-05,
+            "cases": 5
+          },
+          {
+            "name": "story",
+            "node": "story",
+            "graph": "composed-assistant",
+            "model": "mistral:7b-instruct",
+            "task_success": 0.4,
+            "validity": 1.0,
+            "cost_per_task_usd": 0.0,
+            "latency_p95_seconds": 5.632980009977473e-05,
+            "cases": 5
+          }
+        ],
+        "cost_envelope_usd": 0.1,
+        "excluded_by_envelope": 0
+      },
+      "cheapest_capable": {
+        "cases": 5,
+        "task_success": 0.4,
+        "task_success_ci95": [
+          0.1176182311592533,
+          0.769280067791163
+        ],
+        "weighted_task_success": 0.4,
+        "validity": 1.0,
+        "validity_ci95": [
+          0.5655085052479191,
+          1.0
+        ],
+        "run_success_rate": 1.0,
+        "run_success_rate_ci95": [
+          0.5655085052479191,
+          1.0
+        ],
+        "check_pass_rate": 0.5714285714285714,
+        "quality_score": null,
+        "quality_score_ci95": null,
+        "judged_cases": 0,
+        "cost_total_usd": 0.0,
+        "cost_per_task_usd": 0.0,
+        "cost_per_task_usd_ci95": [
+          0.0,
+          0.0
+        ],
+        "quality_per_dollar": null,
+        "input_tokens": 935,
+        "output_tokens": 74,
+        "total_tokens": 1009,
+        "latency_mean_seconds": 5.5077400065783874e-05,
+        "latency_p50_seconds": 5.259999943518778e-05,
+        "latency_p95_seconds": 6.216700021468568e-05,
+        "latency_p95_seconds_ci95": [
+          5.2297799629741346e-05,
+          6.306900013441918e-05
+        ],
+        "hop_count_mean": 1.0,
+        "hop_count_p50": 1.0,
+        "hop_count_p95": 1.0,
+        "hop_count_max": 1.0,
+        "protocol_error_rate": 0.0,
+        "protocol_errors_per_100_calls": 0.0,
+        "provider_calls": 5,
+        "failure_count": 3,
+        "name": "cheapest_capable",
+        "kind": "cheapest_capable",
+        "node": "js-specialist",
+        "graph": "coding-specialist",
+        "model": "qwen2.5-coder:3b",
+        "model_ref": "js-specialist-3b",
+        "available": true,
+        "winner": "js-specialist",
+        "capability_threshold": 0.0,
+        "cost_envelope_usd": 0.1,
+        "candidates": [
+          {
+            "name": "generic-coder",
+            "node": "generic-coder",
+            "graph": "coding-specialist",
+            "model": "qwen2.5-coder:7b",
+            "task_success": 0.2,
+            "validity": 1.0,
+            "cost_per_task_usd": 0.0,
+            "latency_p95_seconds": 6.708919972879812e-05,
+            "cases": 5
+          },
+          {
+            "name": "js-specialist",
+            "node": "js-specialist",
+            "graph": "coding-specialist",
+            "model": "qwen2.5-coder:3b",
+            "task_success": 0.4,
+            "validity": 1.0,
+            "cost_per_task_usd": 0.0,
+            "latency_p95_seconds": 6.216700021468568e-05,
+            "cases": 5
+          },
+          {
+            "name": "story",
+            "node": "story",
+            "graph": "composed-assistant",
+            "model": "mistral:7b-instruct",
+            "task_success": 0.4,
+            "validity": 1.0,
+            "cost_per_task_usd": 0.0,
+            "latency_p95_seconds": 5.632980009977473e-05,
+            "cases": 5
+          }
+        ]
+      },
+      "oracle_routing": {
+        "cases": 5,
+        "task_success": 1.0,
+        "task_success_ci95": [
+          0.5655085052479191,
+          1.0
+        ],
+        "weighted_task_success": 1.0,
+        "validity": 1.0,
+        "validity_ci95": [
+          0.5655085052479191,
+          1.0
+        ],
+        "run_success_rate": 1.0,
+        "run_success_rate_ci95": [
+          0.5655085052479191,
+          1.0
+        ],
+        "check_pass_rate": 1.0,
+        "quality_score": null,
+        "quality_score_ci95": null,
+        "judged_cases": 0,
+        "cost_total_usd": 0.0,
+        "cost_per_task_usd": 0.0,
+        "cost_per_task_usd_ci95": [
+          0.0,
+          0.0
+        ],
+        "quality_per_dollar": null,
+        "input_tokens": 4259,
+        "output_tokens": 304,
+        "total_tokens": 4563,
+        "latency_mean_seconds": 0.0007021045998044428,
+        "latency_p50_seconds": 0.0007453559992427472,
+        "latency_p95_seconds": 0.0007979902000442962,
+        "latency_p95_seconds_ci95": [
+          0.000716028199349239,
+          0.0008054760000959504
+        ],
+        "hop_count_mean": 3.2,
+        "hop_count_p50": 4.0,
+        "hop_count_p95": 4.0,
+        "hop_count_max": 4.0,
+        "protocol_error_rate": 0.0,
+        "protocol_errors_per_100_calls": 0.0,
+        "provider_calls": 13,
+        "failure_count": 0,
+        "name": "oracle_routing",
+        "kind": "oracle-routing",
+        "available": true,
+        "labeler": "measured",
+        "ambiguous_cases": 0,
+        "oracle_agreement": 0.8
+      },
+      "random_routing": {
+        "cases": 5,
+        "task_success": 0.4,
+        "task_success_ci95": [
+          0.1176182311592533,
+          0.769280067791163
+        ],
+        "weighted_task_success": 0.4,
+        "validity": 1.0,
+        "validity_ci95": [
+          0.5655085052479191,
+          1.0
+        ],
+        "run_success_rate": 1.0,
+        "run_success_rate_ci95": [
+          0.5655085052479191,
+          1.0
+        ],
+        "check_pass_rate": 0.42857142857142855,
+        "quality_score": null,
+        "quality_score_ci95": null,
+        "judged_cases": 0,
+        "cost_total_usd": 0.0,
+        "cost_per_task_usd": 0.0,
+        "cost_per_task_usd_ci95": [
+          0.0,
+          0.0
+        ],
+        "quality_per_dollar": null,
+        "input_tokens": 3814,
+        "output_tokens": 234,
+        "total_tokens": 4048,
+        "latency_mean_seconds": 0.000677036799788766,
+        "latency_p50_seconds": 0.0006607570003325236,
+        "latency_p95_seconds": 0.0007626907998201205,
+        "latency_p95_seconds_ci95": [
+          0.0006518850001157262,
+          0.0007680469998376793
+        ],
+        "hop_count_mean": 2.8,
+        "hop_count_p50": 2.0,
+        "hop_count_p95": 4.0,
+        "hop_count_max": 4.0,
+        "protocol_error_rate": 0.0,
+        "protocol_errors_per_100_calls": 0.0,
+        "provider_calls": 12,
+        "failure_count": 3,
+        "name": "random_routing",
+        "kind": "random-routing",
+        "available": true,
+        "seed": 1241,
+        "routes": [
+          {
+            "case_id": "js-debounce",
+            "route": "story"
+          },
+          {
+            "case_id": "js-types",
+            "route": "coding"
+          },
+          {
+            "case_id": "general-rust",
+            "route": "story"
+          },
+          {
+            "case_id": "story-lighthouse",
+            "route": "story"
+          },
+          {
+            "case_id": "story-misrouted",
+            "route": "coding"
+          }
+        ]
+      },
+      "incumbent": {
+        "available": false
+      }
+    },
+    "baseline_notes": "Every example model manifest is free, so cost bands collapse to a $0 point; quality is scripted task success, not a model-quality claim.",
+    "oracle": {
+      "available": true,
+      "reason": null,
+      "labeler": "measured",
+      "labeled_cases": 5,
+      "ambiguous_cases": 0,
+      "oracle_agreement": 0.8,
+      "oracle_agreement_ci95": [
+        0.3755282641185388,
+        0.9637768390302125
+      ],
+      "oracle_gap": 0.2,
+      "oracle_gap_ci95": [
+        0.0,
+        0.6
+      ],
+      "quality_loss_cases": 5,
+      "labels": [
+        {
+          "case_id": "js-debounce",
+          "tags": [
+            "domain:js",
+            "difficulty:easy"
+          ],
+          "oracle_route": "coding",
+          "quality_by_route": {
+            "coding": 1.0,
+            "story": 0.0
+          },
+          "ambiguous": false,
+          "labeler": "measured",
+          "labeled_at": "2026-10-25T04:35:36Z",
+          "labeling_cost_usd": 0.0,
+          "chosen_route": "coding",
+          "chosen_quality": 1.0,
+          "source": "first-hop-route-probes"
+        },
+        {
+          "case_id": "js-types",
+          "tags": [
+            "domain:js",
+            "difficulty:medium"
+          ],
+          "oracle_route": "coding",
+          "quality_by_route": {
+            "coding": 1.0,
+            "story": 0.0
+          },
+          "ambiguous": false,
+          "labeler": "measured",
+          "labeled_at": "2026-10-25T04:35:36Z",
+          "labeling_cost_usd": 0.0,
+          "chosen_route": "coding",
+          "chosen_quality": 1.0,
+          "source": "first-hop-route-probes"
+        },
+        {
+          "case_id": "general-rust",
+          "tags": [
+            "domain:general",
+            "difficulty:medium"
+          ],
+          "oracle_route": "coding",
+          "quality_by_route": {
+            "coding": 1.0,
+            "story": 0.0
+          },
+          "ambiguous": false,
+          "labeler": "measured",
+          "labeled_at": "2026-10-25T04:35:36Z",
+          "labeling_cost_usd": 0.0,
+          "chosen_route": "coding",
+          "chosen_quality": 1.0,
+          "source": "first-hop-route-probes"
+        },
+        {
+          "case_id": "story-lighthouse",
+          "tags": [
+            "domain:writing",
+            "difficulty:easy"
+          ],
+          "oracle_route": "story",
+          "quality_by_route": {
+            "coding": 0.0,
+            "story": 1.0
+          },
+          "ambiguous": false,
+          "labeler": "measured",
+          "labeled_at": "2026-10-25T04:35:36Z",
+          "labeling_cost_usd": 0.0,
+          "chosen_route": "story",
+          "chosen_quality": 1.0,
+          "source": "first-hop-route-probes"
+        },
+        {
+          "case_id": "story-misrouted",
+          "tags": [
+            "domain:writing",
+            "difficulty:medium"
+          ],
+          "oracle_route": "story",
+          "quality_by_route": {
+            "coding": 0.0,
+            "story": 1.0
+          },
+          "ambiguous": false,
+          "labeler": "measured",
+          "labeled_at": "2026-10-25T04:35:36Z",
+          "labeling_cost_usd": 0.0,
+          "chosen_route": "coding",
+          "chosen_quality": 0.0,
+          "source": "first-hop-route-probes"
+        }
+      ],
+      "labeling": {
+        "labeling_method": "measured-first-hop-route-probes",
+        "sampled_from": "evals/e2e/composed-assistant/cases.jsonl",
+        "ambiguity_rule": "Mark a case ambiguous when the best and second-best measured branch qualities differ by at most oracle_ambiguity_delta, or when the case explicitly says so.",
+        "notes": "Labels are produced by running the graph with the first router forced through each candidate branch and grading the same exit checks. Nested routing follows the case's scripted decisions.",
+        "suite_cost_usd": 0.0,
+        "measured_cost_usd": 0.0,
+        "total_usd": 0.0,
+        "per_case_usd": 0.0
+      }
+    },
+    "failure_slices": [
+      {
+        "name": "domain:writing",
+        "cases": 2,
+        "task_success": 0.5,
+        "validity": 1.0,
+        "quality_score": null,
+        "cost_per_task_usd": 0.0,
+        "latency_p95_seconds": 0.0007491220495467133,
+        "hop_count_p95": 3.9,
+        "failure_count": 1
+      },
+      {
+        "name": "difficulty:medium",
+        "cases": 3,
+        "task_success": 0.6666666666666666,
+        "validity": 1.0,
+        "quality_score": null,
+        "cost_per_task_usd": 0.0,
+        "latency_p95_seconds": 0.0007836810001208505,
+        "hop_count_p95": 4.0,
+        "failure_count": 1
+      }
+    ],
+    "pareto": {
+      "configurations": [
+        {
+          "name": "oracle_routing",
+          "kind": "oracle-routing",
+          "quality": 1.0,
+          "quality_ci95": [
+            0.5655085052479191,
+            1.0
+          ],
+          "validity": 1.0,
+          "cost_per_task_usd": 0.0,
+          "cost_per_task_usd_ci95": [
+            0.0,
+            0.0
+          ],
+          "latency_p50_seconds": 0.0007453559992427472,
+          "latency_p95_seconds": 0.0007979902000442962,
+          "hop_count_mean": 3.2,
+          "cases": 5,
+          "available": true,
+          "labeler": "measured",
+          "routes": {
+            "coding": 1.0,
+            "story": 0.0
+          },
+          "frontier": true
+        },
+        {
+          "name": "graph",
+          "kind": "graph",
+          "quality": 0.8,
+          "quality_ci95": [
+            0.3755282641185388,
+            0.9637768390302125
+          ],
+          "validity": 1.0,
+          "cost_per_task_usd": 0.0,
+          "cost_per_task_usd_ci95": [
+            0.0,
+            0.0
+          ],
+          "latency_p50_seconds": 0.0007648259997949935,
+          "latency_p95_seconds": 0.0009648792003645213,
+          "hop_count_mean": 3.6,
+          "cases": 5,
+          "available": true,
+          "frontier": false
+        },
+        {
+          "name": "best_single",
+          "kind": "best_single",
+          "quality": 0.4,
+          "quality_ci95": [
+            0.1176182311592533,
+            0.769280067791163
+          ],
+          "validity": 1.0,
+          "cost_per_task_usd": 0.0,
+          "cost_per_task_usd_ci95": [
+            0.0,
+            0.0
+          ],
+          "latency_p50_seconds": 4.813999930775026e-05,
+          "latency_p95_seconds": 5.632980009977473e-05,
+          "hop_count_mean": 1.0,
+          "cases": 5,
+          "available": true,
+          "node": "story",
+          "graph": "composed-assistant",
+          "model_ref": "story-7b",
+          "winner": "story",
+          "cost_envelope_usd": 0.1,
+          "frontier": false
+        },
+        {
+          "name": "cheapest_capable",
+          "kind": "cheapest_capable",
+          "quality": 0.4,
+          "quality_ci95": [
+            0.1176182311592533,
+            0.769280067791163
+          ],
+          "validity": 1.0,
+          "cost_per_task_usd": 0.0,
+          "cost_per_task_usd_ci95": [
+            0.0,
+            0.0
+          ],
+          "latency_p50_seconds": 5.259999943518778e-05,
+          "latency_p95_seconds": 6.216700021468568e-05,
+          "hop_count_mean": 1.0,
+          "cases": 5,
+          "available": true,
+          "node": "js-specialist",
+          "graph": "coding-specialist",
+          "model_ref": "js-specialist-3b",
+          "winner": "js-specialist",
+          "frontier": false
+        },
+        {
+          "name": "random_routing",
+          "kind": "random-routing",
+          "quality": 0.4,
+          "quality_ci95": [
+            0.1176182311592533,
+            0.769280067791163
+          ],
+          "validity": 1.0,
+          "cost_per_task_usd": 0.0,
+          "cost_per_task_usd_ci95": [
+            0.0,
+            0.0
+          ],
+          "latency_p50_seconds": 0.0006607570003325236,
+          "latency_p95_seconds": 0.0007626907998201205,
+          "hop_count_mean": 2.8,
+          "cases": 5,
+          "available": true,
+          "seed": 1241,
+          "frontier": false
+        }
+      ],
+      "frontier": [
+        "oracle_routing"
+      ],
+      "bands": [
+        {
+          "max_cost_usd": 0.0,
+          "winner": "oracle_routing",
+          "quality": 1.0,
+          "cost_per_task_usd": 0.0
+        }
+      ],
+      "notes": "Quality is task success; cost is manifest-priced cost per task. Frontier entries are not dominated on quality and cost. With free local manifests every configuration sits in the same $0 cost band, so the highest-quality configuration wins that band. Do not compare configurations at different budgets and call the difference quality."
+    },
+    "configurations": [
+      {
+        "name": "oracle_routing",
+        "kind": "oracle-routing",
+        "quality": 1.0,
+        "quality_ci95": [
+          0.5655085052479191,
+          1.0
+        ],
+        "validity": 1.0,
+        "cost_per_task_usd": 0.0,
+        "cost_per_task_usd_ci95": [
+          0.0,
+          0.0
+        ],
+        "latency_p50_seconds": 0.0007453559992427472,
+        "latency_p95_seconds": 0.0007979902000442962,
+        "hop_count_mean": 3.2,
+        "cases": 5,
+        "available": true,
+        "labeler": "measured",
+        "routes": {
+          "coding": 1.0,
+          "story": 0.0
+        },
+        "frontier": true
+      },
+      {
+        "name": "graph",
+        "kind": "graph",
+        "quality": 0.8,
+        "quality_ci95": [
+          0.3755282641185388,
+          0.9637768390302125
+        ],
+        "validity": 1.0,
+        "cost_per_task_usd": 0.0,
+        "cost_per_task_usd_ci95": [
+          0.0,
+          0.0
+        ],
+        "latency_p50_seconds": 0.0007648259997949935,
+        "latency_p95_seconds": 0.0009648792003645213,
+        "hop_count_mean": 3.6,
+        "cases": 5,
+        "available": true,
+        "frontier": false
+      },
+      {
+        "name": "best_single",
+        "kind": "best_single",
+        "quality": 0.4,
+        "quality_ci95": [
+          0.1176182311592533,
+          0.769280067791163
+        ],
+        "validity": 1.0,
+        "cost_per_task_usd": 0.0,
+        "cost_per_task_usd_ci95": [
+          0.0,
+          0.0
+        ],
+        "latency_p50_seconds": 4.813999930775026e-05,
+        "latency_p95_seconds": 5.632980009977473e-05,
+        "hop_count_mean": 1.0,
+        "cases": 5,
+        "available": true,
+        "node": "story",
+        "graph": "composed-assistant",
+        "model_ref": "story-7b",
+        "winner": "story",
+        "cost_envelope_usd": 0.1,
+        "frontier": false
+      },
+      {
+        "name": "cheapest_capable",
+        "kind": "cheapest_capable",
+        "quality": 0.4,
+        "quality_ci95": [
+          0.1176182311592533,
+          0.769280067791163
+        ],
+        "validity": 1.0,
+        "cost_per_task_usd": 0.0,
+        "cost_per_task_usd_ci95": [
+          0.0,
+          0.0
+        ],
+        "latency_p50_seconds": 5.259999943518778e-05,
+        "latency_p95_seconds": 6.216700021468568e-05,
+        "hop_count_mean": 1.0,
+        "cases": 5,
+        "available": true,
+        "node": "js-specialist",
+        "graph": "coding-specialist",
+        "model_ref": "js-specialist-3b",
+        "winner": "js-specialist",
+        "frontier": false
+      },
+      {
+        "name": "random_routing",
+        "kind": "random-routing",
+        "quality": 0.4,
+        "quality_ci95": [
+          0.1176182311592533,
+          0.769280067791163
+        ],
+        "validity": 1.0,
+        "cost_per_task_usd": 0.0,
+        "cost_per_task_usd_ci95": [
+          0.0,
+          0.0
+        ],
+        "latency_p50_seconds": 0.0006607570003325236,
+        "latency_p95_seconds": 0.0007626907998201205,
+        "hop_count_mean": 2.8,
+        "cases": 5,
+        "available": true,
+        "seed": 1241,
+        "frontier": false
+      }
+    ],
+    "extra_configurations": [],
+    "run_manifests": {},
+    "judge": {
+      "configured": false,
+      "model": null,
+      "rubric": null,
+      "rubric_hash": null,
+      "temperature": null,
+      "max_output_tokens": null,
+      "suite_hash": "sha256:49037fcc67304795d16c47bca1d340180eff0d2cfba0508c30962a077e1c1ecd",
+      "calls": 0,
+      "judged_cases": 0,
+      "errors": [],
+      "error": null,
+      "blinded": true,
+      "order_swapped": true,
+      "calibration": {
+        "available": false,
+        "n": 0
+      }
+    },
+    "input_artifacts_supported": false,
+    "baseline_config": {
+      "best_single": true,
+      "cheapest_capable": true,
+      "oracle_routing": true,
+      "random_routing": true,
+      "incumbent": true,
+      "measure_oracle": true,
+      "oracle_ambiguity_delta": 0.05,
+      "random_seed": 7,
+      "capability_threshold": 0.0,
+      "notes": "Every example model manifest is free, so cost bands collapse to a $0 point; quality is scripted task success, not a model-quality claim."
+    }
+  }
+}

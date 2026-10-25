@@ -2,8 +2,10 @@ UV ?= uv
 PYTEST ?= $(UV) run pytest
 RUFF ?= $(UV) run ruff
 MYPY ?= $(UV) run mypy
+EVAL_REPORTS ?= runs/evals/ci
+BASELINES ?= evals/baselines
 
-.PHONY: sync format lint type test live-test ui-check check clean
+.PHONY: sync format lint type test live-test ui-check check clean eval-candidates eval-gates baselines nightly
 
 sync:
 	$(UV) sync
@@ -30,6 +32,46 @@ ui-check:
 	$(UV) run python tests/web/smoke_ui.py
 
 check: lint type test
+
+eval-candidates:
+	rm -rf $(EVAL_REPORTS)
+	mkdir -p $(EVAL_REPORTS)
+	$(UV) run mg eval node --suite evals/mock/js-specialist --provider mock \
+		--reports-dir $(EVAL_REPORTS)/runs --json > $(EVAL_REPORTS)/node.json
+	$(UV) run mg eval routing --suite evals/mock/triage --provider mock \
+		--reports-dir $(EVAL_REPORTS)/runs --json > $(EVAL_REPORTS)/routing.json
+	$(UV) run mg eval e2e --suite evals/e2e/composed-assistant \
+		--graph examples/composed-assistant.graph.yaml --provider mock --profile local-8gb \
+		--reports-dir $(EVAL_REPORTS)/runs \
+		--case js-debounce --case js-types --case general-rust \
+		--case story-lighthouse --case story-misrouted \
+		--json > $(EVAL_REPORTS)/e2e.json
+
+# Run all offline comparisons, collect every result, then fail once at the end. That way one
+# failing level does not hide the other two from the PR summary.
+eval-gates: eval-candidates
+	@mkdir -p $(EVAL_REPORTS)/comparisons
+	@status=0; \
+	for level in node routing e2e; do \
+		echo "== $$level =="; \
+		$(UV) run mg eval compare --baseline $(BASELINES)/$$level.json \
+			--candidate $(EVAL_REPORTS)/$$level.json \
+			--reports-dir $(EVAL_REPORTS)/comparisons \
+			--json > $(EVAL_REPORTS)/compare-$$level.json || status=1; \
+	done; \
+	exit $$status
+
+baselines:
+	$(UV) run python evals/baselines/update.py
+
+nightly:
+	MG_EVAL_LIVE=1 $(UV) run mg eval node --suite evals/mock/js-specialist --provider ollama \
+		--live --reports-dir runs/evals/nightly --fail-on-gate
+	MG_EVAL_LIVE=1 $(UV) run mg eval routing --suite evals/mock/triage --provider ollama \
+		--live --reports-dir runs/evals/nightly --fail-on-gate
+	MG_EVAL_LIVE=1 $(UV) run mg eval e2e --suite evals/e2e/composed-assistant \
+		--graph examples/composed-assistant.graph.yaml --provider ollama --live \
+		--reports-dir runs/evals/nightly --fail-on-gate
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage dist build

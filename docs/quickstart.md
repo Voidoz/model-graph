@@ -147,6 +147,31 @@ The mock provider is the quickest way to see the whole flow: it is offline, dete
 does not need Ollama. `auto` is the same provider choice `mg run` uses and needs the configured
 model server. See [gui.md](gui.md) for the JSON API and security contract.
 
+## 9. Evaluate and prune
+
+```text
+uv run mg eval node --suite evals/mock/js-specialist --provider mock
+uv run mg eval routing --suite evals/mock/triage --provider mock
+uv run mg eval e2e --suite evals/e2e/composed-assistant \
+  --graph examples/composed-assistant.graph.yaml --provider mock --profile local-8gb
+make eval-gates
+```
+
+`mg eval` writes JSON, Markdown, per-case files, and an eval manifest under `runs/evals/`.
+`make eval-gates` regenerates the offline mock candidate reports, compares them with
+`evals/baselines/`, and exits non-zero on a regression or hard-gate failure.
+
+Profiles prune branches the deployment cannot serve:
+
+```text
+uv run mg run examples/composed-assistant.graph.yaml --provider mock \
+  --profile examples/profiles/local-4gb.yaml
+```
+
+The 4GB profile removes the 6GB story and generic-coder branches, records the `PruneReport`
+in the run manifest, and leaves the authored YAML unchanged. The mock run works offline;
+without the profile, `auto`/`ollama` uses the configured local models.
+
 ## What the MVP includes
 
 - YAML/JSON loading with duplicate-key detection.

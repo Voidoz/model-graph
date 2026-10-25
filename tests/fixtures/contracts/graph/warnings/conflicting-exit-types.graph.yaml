@@ -1,0 +1,46 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-conflicting-exits
+  name: Fixture Conflicting Exit Types
+  version: 1.0.0
+  description: Two workers write the same exit artifact with different types.
+spec:
+  entry: triage
+  inputs:
+    - name: task
+      type: text
+  exit: [answer]
+  nodes:
+    - id: triage
+      kind: router
+      description: Chooses between the code and text workers.
+      model: fixture-router
+      reads: [task]
+    - id: code-worker
+      kind: worker
+      description: Writes the answer as code.
+      model: fixture-worker
+      reads: [task]
+      instruction: Answer with code.
+      writes:
+        - name: answer
+          type: code
+    - id: text-worker
+      kind: worker
+      description: Writes the answer as text.
+      model: fixture-worker
+      reads: [task]
+      instruction: Answer with prose.
+      writes:
+        - name: answer
+          type: text
+  edges:
+    - from: triage
+      to: code-worker
+      when: The request asks for code.
+      artifact: code
+    - from: triage
+      to: text-worker
+      when: The request asks for prose.
+      artifact: text

@@ -1,0 +1,471 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:modelgraph:schema:eval-suite:v0",
+  "title": "Eval Suite",
+  "description": "Authoring contract for a Model Graph evaluation suite. Version: modelgraph/eval/v0. The suite.yaml is canonical; cases.jsonl entries validate against #/$defs/case and are loaded by modelgraph.evaluation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {"const": "modelgraph/eval/v0"},
+    "kind": {"const": "EvalSuite"},
+    "metadata": {"$ref": "#/$defs/metadata"},
+    "spec": {"$ref": "#/$defs/spec"}
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version", "description"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._/-]{0,79}$",
+          "description": "Stable suite id, e.g. mock/js-specialist or routing/triage."
+        },
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9.-]+)?$"
+        },
+        "description": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "labels": {
+          "type": "object",
+          "additionalProperties": {"type": "string", "maxLength": 200}
+        },
+        "authors": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "maxLength": 200}
+        },
+        "license": {"type": "string", "maxLength": 200}
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "target", "metric", "cases"],
+      "properties": {
+        "level": {"type": "string", "enum": ["node", "routing", "e2e"]},
+        "provider": {
+          "type": "string",
+          "enum": ["mock", "auto", "ollama", "openai-compatible", "llamacpp"],
+          "default": "mock"
+        },
+        "claim": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "The claim this suite tests. Copied into reports."
+        },
+        "target": {
+          "anyOf": [
+            {"$ref": "#/$defs/nodeTarget"},
+            {"$ref": "#/$defs/routingTarget"},
+            {"$ref": "#/$defs/e2eTarget"}
+          ]
+        },
+        "metric": {
+          "type": "string",
+          "enum": [
+            "task_success",
+            "validity",
+            "quality_score",
+            "check_pass_rate",
+            "cost_per_task_usd",
+            "latency_p50_seconds",
+            "latency_p95_seconds",
+            "protocol_error_rate",
+            "oracle_agreement",
+            "oracle_gap",
+            "cost_weighted_accuracy",
+            "abstain_precision",
+            "abstain_recall",
+            "ece",
+            "hop_count_mean",
+            "hop_count_p95",
+            "quality_per_dollar"
+          ]
+        },
+        "thresholds": {
+          "type": "object",
+          "description": "Metric name to gate value. Higher-is-better metrics use >=; cost, latency, protocol error, and ECE use <=.",
+          "additionalProperties": {"type": "number", "minimum": 0}
+        },
+        "budget": {"$ref": "#/$defs/budget"},
+        "selection": {"$ref": "#/$defs/selection"},
+        "judge": {"$ref": "#/$defs/judge"},
+        "oracle": {"$ref": "#/$defs/oracleConfig"},
+        "calibration": {"$ref": "#/$defs/calibration"},
+        "baselines": {"$ref": "#/$defs/baselines"},
+        "provenance": {"$ref": "#/$defs/provenance"},
+        "cases": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Path to a JSONL case file, relative to the suite directory."
+        },
+        "rubric": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Optional rubric path, relative to the suite directory."
+        }
+      }
+    },
+    "nodeTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graph", "node"],
+      "properties": {
+        "graph": {"type": "string", "minLength": 1, "maxLength": 500},
+        "node": {"$ref": "#/$defs/nodeId"}
+      }
+    },
+    "routingTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graph"],
+      "properties": {
+        "graph": {"type": "string", "minLength": 1, "maxLength": 500},
+        "router": {
+          "$ref": "#/$defs/nodeId",
+          "description": "Router node to evaluate. Defaults to the graph entry node."
+        }
+      }
+    },
+    "e2eTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graph"],
+      "properties": {
+        "graph": {"type": "string", "minLength": 1, "maxLength": 500},
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Optional run profile file or profile name. The CLI --profile flag overrides it."
+        }
+      }
+    },
+    "baselines": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "E2E baseline selection and oracle-labeling policy. Node and routing suites ignore this block.",
+      "properties": {
+        "best_single": {"type": "boolean", "default": true},
+        "cheapest_capable": {"type": "boolean", "default": true},
+        "oracle_routing": {"type": "boolean", "default": true},
+        "random_routing": {"type": "boolean", "default": true},
+        "incumbent": {"type": "boolean", "default": true},
+        "measure_oracle": {
+          "type": "boolean",
+          "default": true,
+          "description": "Measure oracle branch quality by running each candidate branch. When false, use authored case oracle labels."
+        },
+        "oracle_ambiguity_delta": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.05
+        },
+        "random_seed": {"type": "integer", "default": 7},
+        "capability_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0
+        },
+        "cost_envelope_usd": {"type": "number", "minimum": 0},
+        "notes": {"type": "string", "maxLength": 2000}
+      }
+    },
+    "nodeId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,62}$"},
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Suite-level budget. Runtime budgets still apply per case; these values override per-case defaults when smaller or explicitly set by the runner.",
+      "properties": {
+        "max_cost_usd": {"type": "number", "minimum": 0},
+        "max_tokens": {"type": "integer", "minimum": 1},
+        "max_case_cost_usd": {"type": "number", "minimum": 0},
+        "max_case_tokens": {"type": "integer", "minimum": 1},
+        "max_case_wall_seconds": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Deterministic subset selection applied in JSONL order. Explicit runner arguments override these values.",
+      "properties": {
+        "case_ids": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "maxLength": 200},
+          "uniqueItems": true
+        },
+        "tags": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "maxLength": 200},
+          "uniqueItems": true
+        },
+        "tag_mode": {"type": "string", "enum": ["any", "all"], "default": "any"},
+        "limit": {"type": "integer", "minimum": 1},
+        "reason": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Why this subset exists (e.g. oracle labeling cost). Recorded in reports."
+        }
+      }
+    },
+    "judge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean", "default": false},
+        "model": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Pinned judge model reference. Required when enabled."
+        },
+        "rubric": {"type": "string", "maxLength": 500},
+        "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+        "max_output_tokens": {"type": "integer", "minimum": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"enabled": {"const": true}}, "required": ["enabled"]},
+          "then": {"required": ["model", "rubric"]}
+        }
+      ]
+    },
+    "oracleConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How oracle labels were produced and what they cost. Required for routing suites.",
+      "properties": {
+        "labeling_method": {"type": "string", "maxLength": 200},
+        "labeling_cost_usd": {"type": "number", "minimum": 0},
+        "sampled_from": {"type": "string", "maxLength": 500},
+        "ambiguity_rule": {"type": "string", "maxLength": 2000},
+        "notes": {"type": "string", "maxLength": 2000}
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bins": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
+        "threshold_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        },
+        "notes": {"type": "string", "maxLength": 2000}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {"type": "string", "maxLength": 500},
+        "contamination": {
+          "type": "string",
+          "enum": ["not-checked", "checked", "unknown"]
+        },
+        "notes": {"type": "string", "maxLength": 2000},
+        "private": {"type": "boolean"}
+      }
+    },
+    "caseArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "content"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+        "type": {
+          "type": "string",
+          "enum": ["text", "code", "patch", "plan", "json", "report"],
+          "default": "text"
+        },
+        "media_type": {"type": "string", "maxLength": 100},
+        "content": {"type": "string"}
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "input"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"},
+        "tags": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"},
+          "uniqueItems": true
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["task"],
+          "properties": {
+            "task": {"type": "string", "minLength": 1, "maxLength": 200000},
+            "artifacts": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/caseArtifact"}
+            }
+          }
+        },
+        "checks": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/check"},
+          "description": "Required for node and e2e suites; ignored by routing suites."
+        },
+        "oracle": {"$ref": "#/$defs/oracle"},
+        "mock": {
+          "description": "Offline mock script for this case. A string is a raw response; an object is serialized as JSON; an array is served in order (with the last response repeating).",
+          "oneOf": [
+            {"type": "string"},
+            {"type": "object"},
+            {
+              "type": "array",
+              "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}
+            }
+          ]
+        },
+        "mock_nodes": {
+          "type": "object",
+          "description": "Per-node offline mock scripts for e2e cases, keyed by node id. Node and routing suites ignore this field.",
+          "additionalProperties": {
+            "oneOf": [
+              {"type": "string"},
+              {"type": "object"},
+              {
+                "type": "array",
+                "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}
+              }
+            ]
+          }
+        },
+        "weight": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1,
+          "description": "Case weight for weighted aggregates."
+        },
+        "metadata": {"type": "object"}
+      }
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route"],
+      "properties": {
+        "route": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Oracle-optimal child id for a routing case."
+        },
+        "quality": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Best quality observed for the oracle route."
+        },
+        "quality_by_route": {
+          "type": "object",
+          "description": "Quality per candidate child id, used for cost-weighted quality loss and oracle gap.",
+          "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Oracle route cost for this request; used as the cost weight where provided."
+        },
+        "ambiguous": {
+          "type": "boolean",
+          "default": false,
+          "description": "No child is clearly better. Ambiguous cases are excluded from oracle agreement and calibration."
+        },
+        "misroute_loss": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fallback quality loss when quality_by_route is absent."
+        },
+        "note": {"type": "string", "maxLength": 2000},
+        "labeler": {"type": "string", "maxLength": 200},
+        "labeled_at": {"type": "string", "maxLength": 50},
+        "labeling_cost_usd": {"type": "number", "minimum": 0}
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "artifact",
+            "exact_match",
+            "contains",
+            "regex",
+            "json_schema",
+            "command",
+            "rubric"
+          ]
+        },
+        "artifact": {
+          "type": "string",
+          "description": "Artifact name. Defaults to the node's sole declared write."
+        },
+        "value": {"type": "string"},
+        "pattern": {"type": "string"},
+        "flags": {
+          "type": "string",
+          "enum": ["", "i", "m", "s", "im", "is", "ms", "ims"]
+        },
+        "schema": {"type": "object"},
+        "schema_path": {"type": "string", "maxLength": 500},
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 300},
+        "expect_exit_code": {"type": "integer", "default": 0},
+        "stdout_contains": {"type": "string"},
+        "min_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.6},
+        "normalize": {
+          "type": "string",
+          "enum": ["none", "strip", "casefold", "collapse_whitespace"],
+          "default": "none"
+        },
+        "non_empty": {"type": "boolean", "default": true},
+        "min_bytes": {"type": "integer", "minimum": 0, "default": 0}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"type": {"const": "exact_match"}}, "required": ["type"]},
+          "then": {"required": ["value"]}
+        },
+        {
+          "if": {"properties": {"type": {"const": "contains"}}, "required": ["type"]},
+          "then": {"required": ["value"]}
+        },
+        {
+          "if": {"properties": {"type": {"const": "regex"}}, "required": ["type"]},
+          "then": {"required": ["pattern"]}
+        },
+        {
+          "if": {"properties": {"type": {"const": "json_schema"}}, "required": ["type"]},
+          "then": {"anyOf": [{"required": ["schema"]}, {"required": ["schema_path"]}]}
+        },
+        {
+          "if": {"properties": {"type": {"const": "command"}}, "required": ["type"]},
+          "then": {"required": ["command"]}
+        }
+      ]
+    }
+  }
+}

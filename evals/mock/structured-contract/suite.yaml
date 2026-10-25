@@ -1,0 +1,39 @@
+apiVersion: modelgraph/eval/v0
+kind: EvalSuite
+metadata:
+  id: mock/structured-contract
+  name: Structured contract validity fixture (mock)
+  version: 1.0.0
+  description: >-
+    Two-case fixture for validity failures. One scripted response is valid JSON; the other is
+    not. The suite is expected to fail its validity gate and is used by tests to prove invalid
+    output is counted and remains inspectable.
+  labels:
+    level: node
+    domain: evaluation
+    provider: mock
+  authors:
+    - Model Graph contributors
+  license: CC0-1.0
+spec:
+  level: node
+  provider: mock
+  claim: Invalid node output is a validity failure and its raw response remains inspectable.
+  target:
+    graph: evals/fixtures/structured.graph.yaml
+    node: structured
+  metric: validity
+  thresholds:
+    validity: 1.0
+    task_success: 1.0
+    protocol_error_rate: 0.0
+  budget:
+    max_cost_usd: 0.01
+    max_tokens: 10000
+  provenance:
+    source: Hand-written contract fixture.
+    contamination: checked
+    notes: This suite is intentionally expected to fail its gate.
+  cases: cases.jsonl
+  judge:
+    enabled: false

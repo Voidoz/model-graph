@@ -1,0 +1,21 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-bad-kind
+  name: Fixture Bad Kind
+  version: 1.0.0
+  description: A graph whose worker declares an unknown node kind.
+spec:
+  entry: work
+  exit: [answer]
+  nodes:
+    - id: work
+      kind: planner
+      description: This node kind is not part of the contract.
+      model: fixture-worker
+      reads: [task]
+      instruction: Try to plan.
+      writes:
+        - name: answer
+          type: text
+  edges: []

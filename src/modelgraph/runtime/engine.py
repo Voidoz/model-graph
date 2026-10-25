@@ -69,6 +69,9 @@ def run_graph(
     persist: bool = True,
     run_id: str | None = None,
     budget: Budget | None = None,
+    profile: dict[str, Any] | None = None,
+    prune_report: dict[str, Any] | None = None,
+    model_loads: list[dict[str, Any]] | None = None,
 ) -> RunOutcome:
     state = RuntimeState.create(
         graph,
@@ -91,18 +94,17 @@ def run_graph(
             providers[key] = provider_factory(node.model)
         return providers[key]
 
-    trace.emit(
-        "run.started",
-        graph={
+    started_fields: dict[str, Any] = {
+        "graph": {
             "id": graph.id,
             "version": graph.version,
             "hash": graph.graph_hash,
             "source": graph.source,
         },
-        target="portable",
-        task=task,
-        budget=state.budget.snapshot().model_dump(mode="json"),
-        models={
+        "target": "portable",
+        "task": task,
+        "budget": state.budget.snapshot().model_dump(mode="json"),
+        "models": {
             node.id: {
                 "ref": node.model_ref,
                 "hash": node.model_hash,
@@ -111,7 +113,17 @@ def run_graph(
             for node in graph.nodes.values()
             if node.model_ref
         },
-    )
+    }
+    if profile is not None:
+        started_fields["profile"] = profile
+    trace.emit("run.started", **started_fields)
+    if prune_report is not None:
+        trace.emit(
+            "prune.applied",
+            profile=prune_report.get("profile"),
+            report=prune_report,
+            warnings=prune_report.get("warnings", []),
+        )
 
     outcome = "succeeded"
     error: ModelGraphError | None = None
@@ -191,7 +203,15 @@ def run_graph(
         run_dir=run_dir if persist else None,
     )
     if persist:
-        result.manifest = _persist_run(state, trace, result, run_dir)
+        result.manifest = _persist_run(
+            state,
+            trace,
+            result,
+            run_dir,
+            profile=profile,
+            prune_report=prune_report,
+            model_loads=model_loads,
+        )
     return result
 
 
@@ -392,6 +412,10 @@ def _persist_run(
     trace: TraceRecorder,
     result: RunOutcome,
     run_dir: Path,
+    *,
+    profile: dict[str, Any] | None = None,
+    prune_report: dict[str, Any] | None = None,
+    model_loads: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     run_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir = run_dir / "artifacts"
@@ -450,6 +474,12 @@ def _persist_run(
         "finished_at": finished_at,
         "error": result.error,
     }
+    if profile is not None:
+        manifest["profile"] = profile
+    if prune_report is not None:
+        manifest["prune"] = prune_report
+    if model_loads is not None:
+        manifest["model_loads"] = list(model_loads)
     (run_dir / "run.json").write_text(_json_dump(manifest), encoding="utf-8")
     return manifest
 

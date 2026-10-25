@@ -1,0 +1,13 @@
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: fixture-small-context
+  name: Fixture Small Context
+  version: 1.0.0
+  description: A model manifest whose context window is below the contract minimum.
+spec:
+  provider: mock
+  model: fixture-model
+  context_window: 64
+  license:
+    name: apache-2.0

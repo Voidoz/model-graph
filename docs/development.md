@@ -18,8 +18,27 @@ uv run mg version
 ## Checks
 
 ```text
-make format   # write formatting and safe lint fixes
-make check    # format check + ruff + mypy + pytest
+make format      # write formatting and safe lint fixes
+make check       # format check + ruff + mypy + pytest
+make eval-gates  # offline mock eval suites + contribution gates
+```
+
+`make eval-gates` regenerates the node, routing, and e2e mock candidate reports under
+`runs/evals/ci/`, compares each against the committed baselines in `evals/baselines/`, and
+exits non-zero on a tolerance or hard-gate failure. It needs no model server. Baseline moves
+are a separate reviewed commit:
+
+```text
+make baselines   # regenerate evals/baselines/{node,routing,e2e,mock}.json
+```
+
+The gate policy and waiver rules are in `evals/baselines/policy.json` and
+[`evals/baselines/README.md`](../evals/baselines/README.md). Live suites are gated and run
+only on a machine with a model server:
+
+```text
+make nightly
+# equivalent to MG_EVAL_LIVE=1 mg eval node|routing|e2e ... --live --fail-on-gate
 ```
 
 Run a single test:
@@ -81,9 +100,13 @@ src/modelgraph/
   cli.py           # Typer commands
   contracts/       # schema loading, document models, duplicate-key YAML
   compiler/        # graph validation and canonical IR
+  evaluation/      # node/routing/e2e suites, metrics, reports, gates
+  pruning.py       # run profiles, capability pruning, lazy model loading
   providers/       # mock, Ollama, OpenAI-compatible adapters
   runtime/         # envelope, renderer, executors, engine, trace, replay
   web/             # local stdlib server, JSON API, static frontend
+evals/             # mock suites, e2e fixtures, committed gate baselines
+examples/profiles/ # example run profiles (4GB and 8GB)
 tests/             # offline unit and integration tests
   web/             # GUI API, page, and integration tests
 ```
@@ -96,13 +119,37 @@ The CLI and local GUI are the stable interfaces for now:
 uv run mg --help
 uv run mg validate <graph.yaml>
 uv run mg run <graph.yaml> --provider mock
+uv run mg run <graph.yaml> --provider mock --profile local-4gb
 uv run mg replay <run-id>
 uv run mg ui --port 0 --no-browser
 ```
+
+Evaluation and gate commands (all offline with `--provider mock`):
+
+```text
+uv run mg eval node --suite evals/mock/js-specialist --provider mock
+uv run mg eval routing --suite evals/mock/triage --provider mock
+uv run mg eval e2e --suite evals/e2e/composed-assistant \
+  --graph examples/composed-assistant.graph.yaml --provider mock --profile local-8gb
+uv run mg eval compare --baseline evals/baselines/e2e.json \
+  --candidate runs/evals/ci/e2e.json
+```
+
+`mg eval compare` exits 0 on pass, 1 on a gate failure, and 3 on an input error (missing
+baseline/policy, invalid report, or a suite-hash mismatch). Reports are written under
+`runs/evals/<report_id>/` as `report.json`, `report.md`, `manifest.json`, per-case files, and
+(for e2e) the runtime `runs/` manifests. See [evaluation.md](evaluation.md) and
+[`evals/README.md`](../evals/README.md) for the suite and report contracts, and
+[profiles.md](profiles.md) for run profiles and pruning.
 
 See the ticket board in `.scratch/tickets/BOARD.md` for what exists today.
 
 ## CI
 
-`.github/workflows/ci.yml` runs `uv sync --locked` and `make check` on Python 3.12 for pushes to
-`main` and pull requests. A change that only passes locally is not done.
+`.github/workflows/ci.yml` runs `uv sync --locked`, `make check`, and the offline
+`make eval-gates` comparison on Python 3.12 for pushes to `main` and pull requests. The gate
+job writes the comparison Markdown to the job summary and uploads `runs/evals/ci/` as an
+artifact. A real-model job is scheduled/manual only and is skipped unless the repository
+variable `MG_LIVE_RUNNER` names a self-hosted runner; it runs `make nightly` and uploads
+`runs/evals/nightly/`. Default CI does not contact a model server. A change that only passes
+locally is not done.

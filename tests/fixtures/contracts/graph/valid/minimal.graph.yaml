@@ -1,0 +1,21 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-minimal
+  name: Fixture Minimal
+  version: 1.0.0
+  description: A minimal single-worker graph used by the contract fixture corpus.
+spec:
+  entry: work
+  exit: [answer]
+  nodes:
+    - id: work
+      kind: worker
+      description: Echo the request back as a text answer.
+      model: fixture-worker
+      reads: [task]
+      instruction: Echo the request unchanged.
+      writes:
+        - name: answer
+          type: text
+  edges: []

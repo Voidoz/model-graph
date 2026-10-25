@@ -1,0 +1,30 @@
+{
+  "schema": "modelgraph/envelope/v0",
+  "run": {
+    "id": "run_fixture_bad_node",
+    "graph": {
+      "id": "fixture-minimal",
+      "version": "1.0.0",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "depth": 0,
+    "step": 1,
+    "path": [
+      {
+        "node": "Bad_Node",
+        "kind": "worker"
+      }
+    ],
+    "budget": {
+      "max_steps": 8,
+      "used_steps": 1,
+      "max_depth": 3
+    },
+    "started_at": "2026-10-22T10:00:00Z"
+  },
+  "request": {
+    "task": "Say hello."
+  },
+  "inputs": [],
+  "artifacts": []
+}

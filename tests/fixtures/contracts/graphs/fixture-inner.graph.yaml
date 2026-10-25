@@ -1,0 +1,24 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-inner
+  name: Fixture Inner
+  version: 1.0.0
+  description: The inner graph of the subgraph cross-reference fixture corpus.
+spec:
+  entry: work
+  inputs:
+    - name: task
+      type: text
+  exit: [answer]
+  nodes:
+    - id: work
+      kind: worker
+      description: Produces the inner graph answer.
+      model: fixture-worker
+      reads: [task]
+      instruction: Answer the request.
+      writes:
+        - name: answer
+          type: text
+  edges: []

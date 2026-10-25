@@ -4,6 +4,9 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
 
 jobs:
   check:
@@ -16,3 +19,57 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: make check
+
+  eval-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Run deterministic mock suites and contribution gates
+        run: make eval-gates
+      - name: Write gate summaries
+        if: always()
+        run: |
+          mkdir -p runs/evals/ci/comparisons
+          shopt -s nullglob
+          for report in runs/evals/ci/comparisons/*/report.md; do
+            echo "## ${report}" >> "$GITHUB_STEP_SUMMARY"
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Upload evaluation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-reports
+          path: runs/evals/ci/
+          if-no-files-found: warn
+
+  nightly-live:
+    # Real-model runs need a runner with a model server. Set the repository variable
+    # MG_LIVE_RUNNER to a self-hosted runner label to enable this job; without it the job is
+    # skipped. Hosted runners are not used because they have no local model server.
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      vars.MG_LIVE_RUNNER != ''
+    runs-on: ${{ vars.MG_LIVE_RUNNER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Run gated live suites
+        run: make nightly
+      - name: Upload live reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-reports-live
+          path: runs/evals/nightly/
+          if-no-files-found: warn

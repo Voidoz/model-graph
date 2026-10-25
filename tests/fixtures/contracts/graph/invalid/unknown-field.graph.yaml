@@ -1,0 +1,22 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-unknown-field
+  name: Fixture Unknown Node Field
+  version: 1.0.0
+  description: A graph with an extra property that the schema does not allow.
+spec:
+  entry: work
+  exit: [answer]
+  nodes:
+    - id: work
+      kind: worker
+      description: This worker carries an unknown tuning field.
+      model: fixture-worker
+      reads: [task]
+      instruction: Echo the request.
+      temperature: 0.2
+      writes:
+        - name: answer
+          type: text
+  edges: []

@@ -1,0 +1,20 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-missing-description
+  name: Fixture Missing Node Description
+  version: 1.0.0
+  description: A graph with a node that omits its required description.
+spec:
+  entry: work
+  exit: [answer]
+  nodes:
+    - id: work
+      kind: worker
+      model: fixture-worker
+      reads: [task]
+      instruction: Echo the request.
+      writes:
+        - name: answer
+          type: text
+  edges: []

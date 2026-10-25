@@ -114,7 +114,7 @@ def test_health(api: ModelGraphHTTPServer) -> None:
     assert status == 200
     assert content_type.startswith("application/json")
     payload = _json(data)
-    assert payload == {"ok": True, "version": "0.2.0", "ui": "1"}
+    assert payload == {"ok": True, "version": "0.3.0", "ui": "1"}
 
 
 def test_graphs_list_and_detail(api: ModelGraphHTTPServer) -> None:

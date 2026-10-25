@@ -1,0 +1,7 @@
+apiVersion: modelgraph/v0
+kind: Graph
+spec:
+  nodes:
+    - id: work
+      kind: worker
+      kind: router

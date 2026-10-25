@@ -1,0 +1,15 @@
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: fixture-bad-hash
+  name: Fixture Bad Hash
+  version: 1.0.0
+  description: A model manifest with a malformed integrity hash.
+spec:
+  provider: mock
+  model: fixture-model
+  context_window: 4096
+  license:
+    name: apache-2.0
+  integrity:
+    sha256: not-a-sha256-digest

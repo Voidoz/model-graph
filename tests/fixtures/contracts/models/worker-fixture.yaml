@@ -1,0 +1,13 @@
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: fixture-worker
+  name: Fixture Worker Model
+  version: 1.0.0
+  description: A mock worker model used by the cross-reference fixture corpus.
+spec:
+  provider: mock
+  model: mock-worker
+  context_window: 4096
+  license:
+    name: apache-2.0

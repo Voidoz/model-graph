@@ -1,0 +1,41 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: eval-structured
+  name: Structured contract fixture
+  version: 1.0.0
+  description: A single worker that must return JSON. Used by offline validity-failure tests.
+  labels:
+    domain: evaluation
+    difficulty: starter
+  authors:
+    - Model Graph contributors
+  license: CC0-1.0
+spec:
+  entry: structured
+  inputs:
+    - name: task
+      type: text
+      required: true
+      description: The request to turn into structured data.
+  exit: [payload]
+  defaults:
+    max_steps: 2
+    max_depth: 1
+    max_cost_usd: 0.01
+    max_wall_seconds: 30
+    max_total_tokens: 4096
+  nodes:
+    - id: structured
+      kind: worker
+      description: Produces a JSON object that the node contract requires to parse.
+      model: coder-7b
+      reads: [task]
+      instruction: |
+        Return only a JSON object matching the request. Do not use markdown fences.
+      writes:
+        - name: payload
+          type: json
+          strict_json: true
+          media_type: application/json
+  edges: []

@@ -1,0 +1,4 @@
+{
+  "path": "spec.nodes[0]",
+  "message": "Additional properties are not allowed ('temperature' was unexpected)"
+}

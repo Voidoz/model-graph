@@ -1,0 +1,73 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-router-fallback
+  name: Fixture Router With Fallback
+  version: 1.0.0
+  description: A router with two workers and an explicit fallback path.
+  labels:
+    domain: fixtures
+  authors:
+    - Contract fixture corpus
+  license: TBD
+spec:
+  entry: triage
+  inputs:
+    - name: task
+      type: text
+      required: true
+      description: The request to route.
+  exit: [answer]
+  fallback: general
+  defaults:
+    max_steps: 6
+    max_depth: 2
+    max_total_tokens: 8000
+    max_cost_usd: 0.05
+    max_wall_seconds: 60
+    on_budget_exhausted: best_effort
+  nodes:
+    - id: triage
+      kind: router
+      description: Chooses between the specialist and the general worker.
+      model: fixture-router
+      reads: [task]
+      routing:
+        selection: single
+        confidence_threshold: 0.5
+        on_low_confidence: fallback
+        max_retries: 1
+        allow_direct_answer: false
+    - id: specialist
+      kind: worker
+      description: Handles specialist requests and writes the answer.
+      model: fixture-worker
+      reads: [task]
+      instruction: Answer as a specialist.
+      writes:
+        - name: answer
+          type: text
+    - id: general
+      kind: worker
+      description: Handles general requests and writes the answer.
+      model: fixture-worker
+      reads: [task]
+      instruction: Answer as a generalist.
+      writes:
+        - name: answer
+          type: text
+  edges:
+    - from: triage
+      to: specialist
+      when: The request is a specialist request.
+      examples:
+        - Explain the specialist path.
+      artifact: text
+      priority: 10
+    - from: triage
+      to: general
+      when: The request is a general request.
+      examples:
+        - Explain the general path.
+      artifact: text
+      priority: 0

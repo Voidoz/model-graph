@@ -1,0 +1,68 @@
+{
+  "schema": "modelgraph/gate-policy/v0",
+  "source": "docs/evaluation.md#6-contribution-gates",
+  "description": "Default contribution gates. Change this file in a reviewed commit; do not pass ad-hoc thresholds in a normal PR. Relative cost tolerance is applied to the baseline value. A max-direction tolerance means the candidate may drop by at most that amount; a min-direction tolerance means it may rise by at most that amount.",
+  "defaults": {
+    "quality_tolerance": 0.02,
+    "relative_cost_tolerance": 0.1,
+    "bootstrap_resamples": 2000,
+    "seed": 1234
+  },
+  "levels": {
+    "node": {
+      "primary": "task_success",
+      "metrics": {
+        "task_success": {"direction": "max", "tolerance": 0.02},
+        "run_success_rate": {"direction": "max", "tolerance": 0.02},
+        "protocol_error_rate": {"direction": "min", "tolerance": 0.02}
+      }
+    },
+    "routing": {
+      "primary": "oracle_agreement",
+      "metrics": {
+        "oracle_agreement": {"direction": "max", "tolerance": 0.02},
+        "run_success_rate": {"direction": "max", "tolerance": 0.02},
+        "protocol_error_rate": {"direction": "min", "tolerance": 0.02},
+        "cost_per_task_usd": {
+          "direction": "min",
+          "relative_tolerance": 0.1,
+          "absolute_tolerance": 0.0
+        }
+      }
+    },
+    "e2e": {
+      "primary": "task_success",
+      "metrics": {
+        "task_success": {"direction": "max", "tolerance": 0.02},
+        "run_success_rate": {"direction": "max", "tolerance": 0.02},
+        "protocol_error_rate": {"direction": "min", "tolerance": 0.02}
+      }
+    }
+  },
+  "hard_gates": {
+    "schema": {
+      "report_schema": "modelgraph/eval-report/v0",
+      "require_hashes": true
+    },
+    "validity": {
+      "min": 1.0,
+      "compare_to_baseline": true
+    },
+    "safety": {
+      "max_violations": 0
+    },
+    "budget": {
+      "allow_stopped": false
+    },
+    "secret_scan": {
+      "enabled": true
+    }
+  },
+  "waivers": {
+    "allow_quality_gates": true,
+    "allow_hard_gates": false,
+    "require_approver": true,
+    "require_reason": true,
+    "require_expiry": true
+  }
+}

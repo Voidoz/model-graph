@@ -1,0 +1,12 @@
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: fixture-missing-provider
+  name: Fixture Missing Provider
+  version: 1.0.0
+  description: A model manifest whose spec omits the required provider.
+spec:
+  model: fixture-model
+  context_window: 4096
+  license:
+    name: apache-2.0

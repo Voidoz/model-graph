@@ -1,0 +1,25 @@
+{
+  "schema": "modelgraph/envelope/v0",
+  "run": {
+    "id": "run_fixture_bad_hash",
+    "graph": {
+      "id": "fixture-minimal",
+      "version": "1.0.0",
+      "hash": "sha256:not-a-hash"
+    },
+    "depth": 0,
+    "step": 0,
+    "path": [],
+    "budget": {
+      "max_steps": 8,
+      "used_steps": 0,
+      "max_depth": 3
+    },
+    "started_at": "2026-10-22T10:00:00Z"
+  },
+  "request": {
+    "task": "Say hello."
+  },
+  "inputs": [],
+  "artifacts": []
+}

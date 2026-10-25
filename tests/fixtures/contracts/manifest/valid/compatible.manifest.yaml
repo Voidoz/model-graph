@@ -1,0 +1,25 @@
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: fixture-compatible
+  name: Fixture Compatible Model
+  version: 2.1.0
+  description: An OpenAI-compatible manifest with token pricing and network access.
+spec:
+  provider: openai-compatible
+  model: fixture-chat-model
+  endpoint: http://127.0.0.1:8080/v1
+  context_window: 8192
+  capabilities: [chat, streaming, grammar]
+  cost:
+    pricing: per_token
+    input_per_million_usd: 0.5
+    output_per_million_usd: 1.5
+  resources:
+    network_access: internet
+  license:
+    name: mit
+    commercial_use: true
+    redistribution: false
+  integrity:
+    sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
