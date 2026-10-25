@@ -46,13 +46,16 @@ eval-candidates:
 		--case js-debounce --case js-types --case general-rust \
 		--case story-lighthouse --case story-misrouted \
 		--json > $(EVAL_REPORTS)/e2e.json
+	$(UV) run python evals/safety/run.py --reports-dir $(EVAL_REPORTS)/runs \
+		--json > $(EVAL_REPORTS)/safety.json
 
 # Run all offline comparisons, collect every result, then fail once at the end. That way one
-# failing level does not hide the other two from the PR summary.
+# failing level does not hide the others from the PR summary. Safety is a measured hard gate:
+# a violating candidate fails even when its quality metrics improve.
 eval-gates: eval-candidates
 	@mkdir -p $(EVAL_REPORTS)/comparisons
 	@status=0; \
-	for level in node routing e2e; do \
+	for level in node routing e2e safety; do \
 		echo "== $$level =="; \
 		$(UV) run mg eval compare --baseline $(BASELINES)/$$level.json \
 			--candidate $(EVAL_REPORTS)/$$level.json \

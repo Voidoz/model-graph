@@ -16,11 +16,30 @@ from modelgraph.providers.base import Provider
 from modelgraph.runtime.budget import Budget
 from modelgraph.runtime.envelope import RuntimeState
 from modelgraph.runtime.executors import Executor, RouterExecutor, WorkerExecutor
+from modelgraph.runtime.manifest import (
+    OUTCOME_RUNNING,
+    STATUS_FINAL,
+    STATUS_PROVISIONAL,
+    build_environment,
+    build_run_manifest,
+    recover_interrupted_runs,
+    usage_snapshot,
+    write_manifest_atomic,
+)
 from modelgraph.runtime.trace import TraceRecorder
 from modelgraph.util import sha256_text, utc_now
-from modelgraph.version import PARSER_VERSION, RENDERER_VERSION
 
 ProviderFactory = Callable[[ModelManifest], Provider]
+
+
+@dataclass
+class _ChildRun:
+    """A subgraph invocation captured for child manifest persistence."""
+
+    node: CompiledNode
+    graph: CompiledGraph
+    state: RuntimeState
+    completed: bool = False
 
 
 @dataclass
@@ -72,6 +91,8 @@ def run_graph(
     profile: dict[str, Any] | None = None,
     prune_report: dict[str, Any] | None = None,
     model_loads: list[dict[str, Any]] | None = None,
+    seed: int | None = None,
+    target: str = "portable",
 ) -> RunOutcome:
     state = RuntimeState.create(
         graph,
@@ -83,8 +104,35 @@ def run_graph(
     providers: dict[str, Provider] = {}
     directory = Path(runs_dir) if runs_dir else Path.cwd() / "runs"
     run_dir = directory / state.run_id
+    environment: dict[str, Any] | None = None
     if persist:
+        # A dead provisional manifest from a crashed process is recovered before this
+        # run writes its own. A live manifest (including this process) is left alone.
+        recover_interrupted_runs(directory)
         run_dir.mkdir(parents=True, exist_ok=True)
+        environment = build_environment()
+        write_manifest_atomic(
+            run_dir,
+            build_run_manifest(
+                state.graph,
+                run_id=state.run_id,
+                task=state.task,
+                budget=state.budget,
+                started_at=state.started_at,
+                status=STATUS_PROVISIONAL,
+                outcome=OUTCOME_RUNNING,
+                seed=seed,
+                parent_run_id=state.parent_run_id,
+                profile=profile,
+                prune_report=prune_report,
+                target=target,
+                usage=usage_snapshot(state.budget),
+                path=state.path,
+                artifacts=state.artifacts,
+                finished_at=None,
+                environment=environment,
+            ),
+        )
 
     def provider_for(node: CompiledNode) -> Provider:
         if node.model is None:
@@ -101,8 +149,10 @@ def run_graph(
             "hash": graph.graph_hash,
             "source": graph.source,
         },
-        "target": "portable",
+        "target": target,
         "task": task,
+        "seed": seed,
+        "parent_run_id": state.parent_run_id,
         "budget": state.budget.snapshot().model_dump(mode="json"),
         "models": {
             node.id: {
@@ -128,6 +178,7 @@ def run_graph(
     outcome = "succeeded"
     error: ModelGraphError | None = None
     result_artifacts: list[Artifact] = []
+    child_runs: list[_ChildRun] = []
     try:
         _walk(
             state,
@@ -136,8 +187,9 @@ def run_graph(
             trace=trace,
             provider_for=provider_for,
             providers=providers,
+            children=child_runs,
             executor_factory=lambda node: Executor(
-                provider_for(node), budget=state.budget, trace=trace
+                provider_for(node), budget=state.budget, trace=trace, seed=seed
             ),
         )
         result_artifacts = state.results()
@@ -211,6 +263,11 @@ def run_graph(
             profile=profile,
             prune_report=prune_report,
             model_loads=model_loads,
+            providers=list(providers.values()),
+            child_runs=child_runs,
+            seed=seed,
+            target=target,
+            environment=environment,
         )
     return result
 
@@ -224,6 +281,7 @@ def _walk(
     provider_for: Callable[[CompiledNode], Provider],
     providers: dict[str, Provider],
     executor_factory: Callable[[CompiledNode], Executor],
+    children: list[_ChildRun] | None = None,
 ) -> None:
     current: str | None = start
     while current is not None:
@@ -295,6 +353,9 @@ def _walk(
                 depth=depth + 1,
             )
             child = _child_state(state, node, inner, depth + 1)
+            child_record = _ChildRun(node=node, graph=inner, state=child)
+            if children is not None:
+                children.append(child_record)
             _walk(
                 child,
                 inner.entry,
@@ -303,7 +364,9 @@ def _walk(
                 provider_for=provider_for,
                 providers=providers,
                 executor_factory=executor_factory,
+                children=children,
             )
+            child_record.completed = True
             _map_subgraph_outputs(state, child, node)
             trace.emit("subgraph.exited", node=node.id, child_run_id=child.run_id)
             outgoing = state.graph.outgoing(node.id)
@@ -396,15 +459,7 @@ def _inner_input(inner: CompiledGraph, name: str) -> ArtifactInput | None:
 
 
 def _usage(state: RuntimeState) -> dict[str, Any]:
-    budget = state.budget
-    return {
-        "steps": budget.used_steps,
-        "input_tokens": budget.used_input_tokens,
-        "output_tokens": budget.used_output_tokens,
-        "total_tokens": budget.used_tokens,
-        "cost_usd": round(budget.used_cost_usd, 8),
-        "elapsed_seconds": round(budget.elapsed_seconds, 3),
-    }
+    return usage_snapshot(state.budget)
 
 
 def _persist_run(
@@ -416,6 +471,11 @@ def _persist_run(
     profile: dict[str, Any] | None = None,
     prune_report: dict[str, Any] | None = None,
     model_loads: list[dict[str, Any]] | None = None,
+    providers: list[Provider] | None = None,
+    child_runs: list[_ChildRun] | None = None,
+    seed: int | None = None,
+    target: str = "portable",
+    environment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir = run_dir / "artifacts"
@@ -427,60 +487,72 @@ def _persist_run(
     trace.write(run_dir / "trace.jsonl")
     (run_dir / "envelope.json").write_text(_json_dump(state.envelope().to_dict()), encoding="utf-8")
     finished_at = utc_now()
-    models: list[dict[str, Any]] = []
-    for node in state.graph.nodes.values():
-        if not node.model_ref:
-            continue
-        models.append(
+
+    subgraphs: list[dict[str, Any]] = []
+    for child in child_runs or []:
+        child_outcome = "succeeded" if child.completed else result.outcome
+        child_error = None if child.completed else result.error
+        child_dir = run_dir / "subgraphs" / child.state.run_id
+        child_manifest = build_run_manifest(
+            child.graph,
+            run_id=child.state.run_id,
+            task=child.state.task,
+            budget=child.state.budget,
+            started_at=child.state.started_at,
+            status=STATUS_FINAL,
+            outcome=child_outcome,
+            seed=seed,
+            parent_run_id=child.state.parent_run_id,
+            profile=profile,
+            prune_report=prune_report,
+            target=target,
+            usage=usage_snapshot(child.state.budget),
+            path=child.state.path,
+            artifacts=child.state.artifacts,
+            error=child_error,
+            finished_at=finished_at,
+            providers=providers,
+            trace="../../trace.jsonl",
+            environment=environment,
+        )
+        write_manifest_atomic(child_dir, child_manifest)
+        subgraphs.append(
             {
-                "node": node.id,
-                "ref": node.model_ref,
-                "hash": node.model_hash,
-                "provider": node.model.spec.provider if node.model else None,
-                "model": node.model.spec.model if node.model else None,
-                "version": node.model.metadata.version if node.model else None,
+                "node": child.node.id,
+                "graph": child.graph.id,
+                "hash": child.graph.graph_hash,
+                "run_id": child.state.run_id,
+                "parent_run_id": state.run_id,
+                "status": "final",
+                "outcome": child_outcome,
+                "manifest": str(Path("subgraphs") / child.state.run_id / "run.json"),
             }
         )
-    manifest: dict[str, Any] = {
-        "run_id": state.run_id,
-        "deployment_revision": f"rev_{state.run_id}",
-        "target": "portable",
-        "renderer_version": RENDERER_VERSION,
-        "parser_version": PARSER_VERSION,
-        "outcome": result.outcome,
-        "graph": {
-            "id": state.graph.id,
-            "version": state.graph.version,
-            "hash": state.graph.graph_hash,
-            "source": state.graph.source,
-        },
-        "request": {"task": state.task},
-        "models": models,
-        "budget": state.budget.snapshot().model_dump(mode="json"),
-        "usage": result.usage,
-        "path": [entry.model_dump(mode="json", exclude_none=True) for entry in state.path],
-        "artifacts": [
-            {
-                "name": artifact.name,
-                "type": artifact.type.value,
-                "hash": artifact.hash,
-                "producer": artifact.producer,
-                "bytes": len(artifact.content),
-            }
-            for artifact in state.artifacts
-        ],
-        "trace": "trace.jsonl",
-        "started_at": state.started_at,
-        "finished_at": finished_at,
-        "error": result.error,
-    }
-    if profile is not None:
-        manifest["profile"] = profile
-    if prune_report is not None:
-        manifest["prune"] = prune_report
-    if model_loads is not None:
-        manifest["model_loads"] = list(model_loads)
-    (run_dir / "run.json").write_text(_json_dump(manifest), encoding="utf-8")
+
+    manifest = build_run_manifest(
+        state.graph,
+        run_id=state.run_id,
+        task=state.task,
+        budget=state.budget,
+        started_at=state.started_at,
+        status=STATUS_FINAL,
+        outcome=result.outcome,
+        seed=seed,
+        parent_run_id=state.parent_run_id,
+        profile=profile,
+        prune_report=prune_report,
+        target=target,
+        usage=result.usage,
+        path=state.path,
+        artifacts=state.artifacts,
+        error=result.error,
+        finished_at=finished_at,
+        model_loads=model_loads,
+        subgraphs=subgraphs,
+        providers=providers,
+        environment=environment,
+    )
+    write_manifest_atomic(run_dir, manifest)
     return manifest
 
 

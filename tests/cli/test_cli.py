@@ -13,7 +13,7 @@ runner = CliRunner()
 def test_version() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert result.stdout.strip() == "0.3.0"
+    assert result.stdout.strip() == "0.4.0"
 
 
 def test_validate_json() -> None:
@@ -38,6 +38,8 @@ def test_run_mock_and_replay(tmp_path: Path) -> None:
             "mock",
             "--runs-dir",
             str(tmp_path),
+            "--seed",
+            "17",
             "--json",
         ],
     )
@@ -48,6 +50,7 @@ def test_run_mock_and_replay(tmp_path: Path) -> None:
     run_dir = Path(payload["run_dir"])
     assert (run_dir / "run.json").exists()
     assert (run_dir / "trace.jsonl").exists()
+    assert json.loads((run_dir / "run.json").read_text())["seed"] == 17
 
     replay = runner.invoke(app, ["replay", str(run_dir), "--json"])
     assert replay.exit_code == 0, replay.stdout + replay.stderr

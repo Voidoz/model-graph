@@ -57,11 +57,13 @@ class Executor:
         budget: Budget,
         trace: TraceRecorder,
         max_retries: int = 1,
+        seed: int | None = None,
     ) -> None:
         self.provider = provider
         self.budget = budget
         self.trace = trace
         self.max_retries = max_retries
+        self.seed = seed
 
     def _request(
         self, node: CompiledNode, prompt: RenderedPrompt, *, temperature: float
@@ -84,6 +86,7 @@ class Executor:
             temperature=temperature,
             max_output_tokens=max_output,
             json_mode=json_mode and "json_mode" in model.spec.capabilities,
+            seed=self.seed,
             timeout_seconds=(
                 node.limits.timeout_seconds
                 if node.limits and node.limits.timeout_seconds

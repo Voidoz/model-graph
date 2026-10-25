@@ -1,0 +1,14 @@
+# A 4GB-VRAM laptop profile. The 6GB coder and storyteller models are pruned.
+# On composed-assistant the nested coding graph keeps its JavaScript specialist, so a
+# valid branch survives; hello-triage has no surviving exit producer and fails MG-1005.
+name: local-4gb
+network: loopback
+gpu: true
+max_vram_gb: 4
+max_ram_gb: 16
+max_disk_gb: 20
+providers: [ollama, llamacpp, mock]
+licenses: [apache-2.0, mit]
+max_cost_usd: 0.0
+budget_overrides:
+  max_steps: 8

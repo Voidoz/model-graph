@@ -1,0 +1,13 @@
+# A typical laptop or small workstation with 8GB of usable VRAM.
+# All example models fit; this profile is the least restrictive local default.
+name: local-8gb
+network: loopback
+gpu: true
+max_vram_gb: 8
+max_ram_gb: 32
+max_disk_gb: 50
+providers: [ollama, llamacpp, mock]
+licenses: [apache-2.0, mit]
+max_cost_usd: 0.0
+budget_overrides:
+  max_steps: 8

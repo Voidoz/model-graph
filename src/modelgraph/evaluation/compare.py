@@ -5,9 +5,14 @@ This module is the decision layer, not a second measurement layer. It reuses
 construction, then adds the checks described in ``docs/evaluation.md`` section 6:
 
 * per-metric baseline/candidate deltas with seeded paired-bootstrap confidence intervals;
-* per-level quality/reliability gates for node, routing, and e2e reports;
+* per-level quality/reliability gates for node, routing, e2e, and safety reports;
 * hard gates for validity, schema, safety, budget, and secret scanning;
 * an explicit, reviewed waiver file whose entries are rendered into the report.
+
+A suite labelled ``level: safety`` (or whose id starts with ``safety/``) uses the ``safety``
+policy level and must report the safety metric; a safety suite that drops it fails closed
+instead of reporting ``not_measured``. Other suites keep the explicit ``not_measured`` status
+because they do not claim to measure safety.
 
 A hard-gate failure is never waived. A missing baseline is an error, not an empty comparison.
 The default policy lives in ``evals/baselines/policy.json`` so the thresholds have one reviewed
@@ -30,6 +35,11 @@ from modelgraph.evaluation.metrics import bootstrap_ci
 from modelgraph.evaluation.report import (
     EvalReport,
     validate_report,
+)
+from modelgraph.evaluation.safety import (
+    SAFETY_CASE_PASS_RATE_METRIC,
+    SAFETY_LEVEL,
+    SAFETY_METRIC,
 )
 from modelgraph.util import canonical_json, sha256_text
 
@@ -264,11 +274,14 @@ def compare_against_baseline(
     else:
         policy_data, policy_path = load_policy()
     level = str(candidate_data.get("level", ""))
-    if level not in ("node", "routing", "e2e"):
-        raise EvalError(f"cannot gate a {level!r} report; expected a node, routing, or e2e report")
-    level_policy = (policy_data.get("levels") or {}).get(level)
+    gate_level = SAFETY_LEVEL if _is_safety_suite(candidate_data) else level
+    if gate_level not in ("node", "routing", "e2e", SAFETY_LEVEL):
+        raise EvalError(
+            f"cannot gate a {level!r} report; expected a node, routing, e2e, or safety report"
+        )
+    level_policy = (policy_data.get("levels") or {}).get(gate_level)
     if not isinstance(level_policy, dict):
-        raise EvalError(f"gate policy has no level configuration for {level!r}")
+        raise EvalError(f"gate policy has no level configuration for {gate_level!r}")
     baseline_path_text = str(baseline_path)
     if command is None:
         command = f"mg eval compare --baseline {baseline_path_text} --candidate <candidate-report>"
@@ -285,7 +298,7 @@ def compare_against_baseline(
     baseline_cases = {str(case.get("case_id")): case for case in baseline_data["cases"]}
     common = sorted(set(candidate_cases) & set(baseline_cases))
     checks = _metric_checks(
-        level,
+        gate_level,
         level_policy,
         candidate_data,
         baseline_data,
@@ -295,7 +308,13 @@ def compare_against_baseline(
         bootstrap_resamples=bootstrap_resamples,
         seed=seed,
     )
-    hard_gates = _hard_gates(candidate_data, baseline_data, policy_data)
+    hard_gates = _hard_gates(candidate_data, baseline_data, policy_data, gate_level)
+    # The generic comparison extractor understands the usual node/routing/e2e metrics. Safety
+    # metrics are scored per case here, so keep the paired-case count consistent with the checks.
+    measured_pairs = max((int(check.get("paired_cases") or 0) for check in checks), default=0)
+    if measured_pairs and int(base.metrics.get("paired_cases") or 0) < measured_pairs:
+        base.metrics["paired_cases"] = measured_pairs
+        base.selection["paired_cases"] = measured_pairs
     waived, waiver_records = _apply_waivers(
         checks,
         hard_gates,
@@ -312,7 +331,8 @@ def compare_against_baseline(
     passed = not soft_failures and not hard_failures
     gate = {
         "passed": passed,
-        "level": level,
+        "level": gate_level,
+        "report_level": level,
         "policy": {
             "path": str(policy_path),
             "hash": sha256_text(canonical_json(policy_data)),
@@ -539,18 +559,39 @@ def _case_metric_value(
         if case.get("correct") is not None:
             return 1.0 if case.get("correct") else 0.0
         return None
+    if level == SAFETY_LEVEL and metric == SAFETY_METRIC:
+        return _safety_case_value(case)
+    if level == SAFETY_LEVEL and metric == SAFETY_CASE_PASS_RATE_METRIC:
+        value = _safety_case_value(case)
+        return None if value is None else (1.0 if value == 0.0 else 0.0)
     return _case_value({"primary_metric": {"name": metric}}, case)
+
+
+def _safety_case_value(case: dict[str, Any]) -> float | None:
+    """Count one case's declared safety violations for the policy gate."""
+    violations = case.get("safety_violations")
+    if isinstance(violations, list):
+        return float(len(violations))
+    if isinstance(violations, (int, float)) and not isinstance(violations, bool):
+        return float(violations)
+    passed = case.get("safety_passed")
+    if isinstance(passed, bool):
+        return 0.0 if passed else 1.0
+    return None
 
 
 def _hard_gates(
     candidate_data: dict[str, Any],
     baseline_data: dict[str, Any],
     policy_data: dict[str, Any],
+    gate_level: str,
 ) -> dict[str, dict[str, Any]]:
     config = policy_data.get("hard_gates") or {}
     validity_config = config.get("validity") or {}
     safety_config = config.get("safety") or {}
     secret_config = config.get("secret_scan") or {}
+    required_safety_levels = safety_config.get("required_levels") or []
+    safety_required = gate_level in required_safety_levels
     hard: dict[str, dict[str, Any]] = {}
 
     report_issues = validate_report(candidate_data)
@@ -597,12 +638,24 @@ def _hard_gates(
 
     safety_value, safety_detail = _safety_value(candidate_data)
     if safety_value is None:
-        hard["safety"] = {
-            "passed": True,
-            "status": "not_measured",
-            "detail": f"this suite does not report safety violations ({safety_detail})",
-            "value": None,
-        }
+        if safety_required:
+            # A safety suite that drops its metric is a gate failure, not an unmeasured pass.
+            hard["safety"] = {
+                "passed": False,
+                "status": "fail",
+                "detail": (
+                    "the safety suite did not report a safety violation metric "
+                    f"({safety_detail}); a safety report must measure safety"
+                ),
+                "value": None,
+            }
+        else:
+            hard["safety"] = {
+                "passed": True,
+                "status": "not_measured",
+                "detail": f"this suite does not report safety violations ({safety_detail})",
+                "value": None,
+            }
     else:
         maximum = _optional_float(safety_config.get("max_violations")) or 0.0
         hard["safety"] = {
@@ -766,25 +819,54 @@ def _hashes_ok(report: dict[str, Any]) -> bool:
     )
 
 
+def _is_safety_suite(report: dict[str, Any]) -> bool:
+    """A safety suite declares itself through its labels or its suite id.
+
+    The report schema has one level enum for node/routing/e2e/comparison reports, so the safety
+    fixture keeps ``level: node`` and marks the policy level in the suite labels. Both signals
+    are checked so a hand-written or renamed report cannot silently lose the safety gate.
+    """
+    suite = report.get("suite") or {}
+    labels = suite.get("labels") if isinstance(suite.get("labels"), dict) else {}
+    if isinstance(labels, dict) and labels.get("level") == SAFETY_LEVEL:
+        return True
+    return str(suite.get("id") or "").startswith(f"{SAFETY_LEVEL}/")
+
+
 def _safety_value(report: dict[str, Any]) -> tuple[float | None, str]:
+    """Return the measured safety violation count, failing toward the larger value.
+
+    A report can expose an aggregate metric, per-case violation lists, or both. If they disagree,
+    the gate uses the larger value: a gate must not be talked down by an inconsistent aggregate.
+    """
     metrics = report.get("metrics") or {}
+    metric_value: float | None = None
+    metric_detail = ""
     for key in ("safety_violations", "safety_violation_rate"):
         value = metrics.get(key)
-        if isinstance(value, (int, float)):
-            return float(value), f"metrics.{key}"
-    total = 0.0
-    found = False
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            metric_value = float(value)
+            metric_detail = f"metrics.{key}"
+            break
+    case_total = 0.0
+    case_found = False
     for case in report.get("cases", []):
         value = case.get("safety_violations")
         if isinstance(value, list):
-            total += len(value)
-            found = True
-        elif isinstance(value, (int, float)):
-            total += float(value)
-            found = True
-    if found:
-        return total, "case safety_violations"
-    return None, "no safety metric or safety_violations field"
+            case_total += len(value)
+            case_found = True
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            case_total += float(value)
+            case_found = True
+    if metric_value is None and not case_found:
+        return None, "no safety metric or safety_violations field"
+    if metric_value is None:
+        return case_total, "case safety_violations"
+    if not case_found:
+        return metric_value, metric_detail
+    if case_total > metric_value:
+        return case_total, f"{metric_detail} and case safety_violations (case total is higher)"
+    return metric_value, metric_detail
 
 
 def _case_budget_stopped(case: dict[str, Any]) -> bool:

@@ -9,7 +9,7 @@ The reports are written to `evals/baselines/<level>.json` and are reviewed as a 
 commit. This script deliberately does not commit anything: baseline changes need review, and a
 normal feature PR must not silently move the reference point. The e2e baseline excludes the
 deliberately invalid mock case so the release hard gate ("validity must be 100%") is meaningful;
-CI uses the same case selection.
+CI uses the same case selection. The safety baseline is the zero-violation fixture report.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 
 from modelgraph.evaluation import run_e2e_suite, run_node_suite, run_routing_suite
+from modelgraph.evaluation.safety import run_safety_suite
 from modelgraph.paths import runs_dir
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +53,12 @@ def main() -> int:
             provider="mock",
             reports_dir=ROOT / "runs" / "baselines",
             case_ids=E2E_CASES,
+            persist=False,
+        ),
+        "safety": run_safety_suite(
+            ROOT / "evals" / "safety" / "model-safety",
+            provider="mock",
+            reports_dir=ROOT / "runs" / "baselines",
             persist=False,
         ),
     }

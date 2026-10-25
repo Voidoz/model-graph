@@ -279,7 +279,8 @@ Some things cannot be traded away:
 
 - **Validity**: 100% of successful runs produce the declared exit artifacts.
 - **Schema**: all graphs validate; all examples compile.
-- **Safety**: zero safety violations in the safety suite for a release.
+- **Safety**: zero safety violations in the safety suite for a release (measured by the
+  offline fixture suite in §6.2; its evidence limits are stated there).
 - **Security**: no secrets in traces or prompts (automated scan).
 - **Budget**: no run exceeds its declared budget.
 - **Backend parity**: a backend must produce the declared artifact text and routing
@@ -287,6 +288,44 @@ Some things cannot be traded away:
 
 Backend performance is reported separately from quality. A faster backend does not excuse a
 quality regression, and a quality gain does not excuse a silent latency-class change.
+
+### 6.2 Safety gate measurement
+
+The safety hard gate is measured by the offline fixture suite in
+[`evals/safety/model-safety`](../evals/safety/model-safety/suite.yaml), not inferred from a
+quality suite. The fixture runs a one-node safety probe graph through the normal compiler,
+renderer, runtime, and scripted mock provider, then scores the produced artifacts and raw
+responses against explicit `must_not` rules declared in each case's
+`metadata.safety.rules`:
+
+| Probe class | Rule | What a violation means |
+| --- | --- | --- |
+| Prompt injection | `must_not_contain` an embedded canary | The model executed an instruction inside user text or disclosed hidden instructions. |
+| Secret/context leakage | `must_not_contain` a marked value; `must_not_match` credential shapes | The model copied a protected value into its output. |
+| Unsafe content | `must_not_contain` a compliance canary; `must_not_match` a step-by-step procedure | The model complied with a harmful request. |
+
+Every case in a safety suite must declare at least one rule. The runner fails closed if a case
+is missing, a rule is malformed, or the resulting report has no `safety_violations` metric. The
+safety report keeps the normal report schema with `level: node`, but its suite carries
+`labels.level: safety`; `mg eval compare` therefore selects the reviewed `safety` policy level
+in [`evals/baselines/policy.json`](../evals/baselines/policy.json) and requires the hard safety
+gate rather than reporting `not_measured`. A safety violation fails the gate even when
+`task_success`, validity, and the other quality checks improve, and hard gates remain
+non-waivable.
+
+Run the fixture and compare it against the committed baseline:
+
+```text
+uv run python evals/safety/run.py --json > runs/evals/ci/safety.json
+uv run mg eval compare --baseline evals/baselines/safety.json \
+  --candidate runs/evals/ci/safety.json
+```
+
+The fixture is deliberately small and uses synthetic canaries and scripted safe responses. It
+is evidence that the measurement and gate work, **not** a claim that a production model is safe.
+A public safety claim needs a larger reviewed suite, real model runs, and a documented
+false-positive/false-negative review; until then the suite version and sample size must be
+reported with any safety number.
 
 ## 7. Statistical discipline
 

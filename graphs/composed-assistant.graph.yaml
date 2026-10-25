@@ -1,0 +1,80 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: composed-assistant
+  name: Composed Assistant
+  version: 1.0.0
+  description: The worked example from the design brief. A domain router delegates to a nested coding graph or a storyteller.
+  labels:
+    domain: general
+    difficulty: advanced
+  authors:
+    - Model Graph contributors
+  license: TBD
+spec:
+  entry: domain-triage
+  inputs:
+    - name: task
+      type: text
+      required: true
+      description: The user request.
+  exit: [answer]
+  defaults:
+    max_steps: 8
+    max_depth: 3
+    max_cost_usd: 0.10
+    max_wall_seconds: 300
+    max_total_tokens: 32000
+  nodes:
+    - id: domain-triage
+      kind: router
+      description: Decides between a coding team and a storyteller.
+      model: router-small
+      reads: [task]
+      routing:
+        confidence_threshold: 0.7
+        on_low_confidence: error
+        max_retries: 1
+    - id: coding
+      kind: subgraph
+      description: A nested team that routes coding work between a JavaScript specialist and a general coder.
+      graph: coding-specialist@1.0.0
+      reads: [task]
+      input_map:
+        task: task
+      output_map:
+        answer: answer
+      writes:
+        - name: answer
+          type: text
+          media_type: text/plain
+    - id: story
+      kind: worker
+      description: Writes short fiction, narrative, or poetry in the requested style.
+      model: story-7b
+      reads: [task]
+      instruction: |
+        You are a concise storyteller. Write the requested story or poem.
+        Do not explain your process. Put the final text in the artifact named "answer".
+      writes:
+        - name: answer
+          type: text
+          media_type: text/markdown
+  edges:
+    - from: domain-triage
+      to: coding
+      when: The user asks for code, debugging, architecture, algorithms, or technical implementation.
+      examples:
+        - Write a debounce function in TypeScript.
+        - Why does my Rust closure not compile?
+        - Design a schema for a booking system.
+      artifact: text
+      priority: 10
+    - from: domain-triage
+      to: story
+      when: The user asks for fiction, narrative, characters, poetry, or creative writing.
+      examples:
+        - Tell me a story about a lighthouse keeper.
+        - Write a two-line poem about rain.
+      artifact: text
+      priority: 0

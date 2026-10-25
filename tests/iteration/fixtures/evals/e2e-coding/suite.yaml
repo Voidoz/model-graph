@@ -1,0 +1,46 @@
+apiVersion: modelgraph/eval/v0
+kind: EvalSuite
+metadata:
+  id: iteration/e2e-coding
+  name: Coding specialist e2e fixture for revision tests
+  version: 1.0.0
+  description: Two scripted coding-specialist runs that exercise the revision evidence path.
+  labels:
+    level: e2e
+    domain: coding
+    provider: mock
+  authors:
+    - Model Graph contributors
+  license: CC0-1.0
+spec:
+  level: e2e
+  provider: mock
+  claim: Synthetic end-to-end fixture; it validates the revision evidence path, not model quality.
+  target:
+    graph: examples/coding-specialist.graph.yaml
+  metric: task_success
+  thresholds:
+    task_success: 1.0
+    validity: 1.0
+    protocol_error_rate: 0.0
+    cost_per_task_usd: 0.0
+  budget:
+    max_cost_usd: 0.05
+    max_tokens: 200000
+  baselines:
+    best_single: false
+    cheapest_capable: false
+    oracle_routing: false
+    random_routing: false
+    incumbent: false
+    measure_oracle: false
+    notes: Revision fixture disables the Pareto baselines to keep the evidence path fast.
+  selection:
+    reason: Two cases keep the revision test fast and offline.
+  provenance:
+    source: Hand-written revision-test fixture.
+    contamination: checked
+    notes: No benchmark data.
+  cases: cases.jsonl
+  judge:
+    enabled: false

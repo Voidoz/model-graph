@@ -5,7 +5,13 @@ import pytest
 import yaml
 from jsonschema import Draft202012Validator
 
-from modelgraph.contracts import load_document, load_schema, validate_document, validator
+from modelgraph.contracts import (
+    SCHEMA_FILES,
+    load_document,
+    load_schema,
+    validate_document,
+    validator,
+)
 from modelgraph.contracts.envelope import Envelope
 from modelgraph.contracts.graph import GraphDocument
 from modelgraph.contracts.manifest import ModelManifest
@@ -17,11 +23,28 @@ EXAMPLES = ROOT / "examples"
 TICKETS = ROOT / ".scratch" / "tickets"
 
 
-@pytest.mark.parametrize("name", ["graph", "manifest", "envelope", "ticket"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "graph",
+        "manifest",
+        "envelope",
+        "ticket",
+        "eval-suite",
+        "run-manifest",
+        "dataset",
+        "change-set",
+    ],
+)
 def test_schemas_are_valid(name: str) -> None:
     schema = load_schema(name)
     Draft202012Validator.check_schema(schema)
     validator(name)
+
+
+def test_schema_registry_covers_every_schema_file() -> None:
+    schema_dir = ROOT / "schemas"
+    assert set(SCHEMA_FILES.values()) == {path.name for path in schema_dir.glob("*.json")}
 
 
 def test_examples_validate() -> None:

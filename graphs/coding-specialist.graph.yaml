@@ -1,0 +1,83 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: coding-specialist
+  name: Coding Specialist
+  version: 1.0.0
+  description: A nested coding team that separates JavaScript and TypeScript work from general programming.
+  labels:
+    domain: coding
+    difficulty: intermediate
+  authors:
+    - Model Graph contributors
+  license: TBD
+spec:
+  entry: coding-triage
+  inputs:
+    - name: task
+      type: text
+      required: true
+      description: A programming request.
+  exit: [answer]
+  fallback: generic-coder
+  defaults:
+    max_steps: 6
+    max_depth: 2
+    max_cost_usd: 0.05
+    max_wall_seconds: 180
+    max_total_tokens: 24000
+  nodes:
+    - id: coding-triage
+      kind: router
+      description: Distinguishes JavaScript/TypeScript requests from general programming requests.
+      model: router-small
+      reads: [task]
+      routing:
+        confidence_threshold: 0.6
+        on_low_confidence: fallback
+        max_retries: 1
+    - id: js-specialist
+      kind: worker
+      description: Writes modern JavaScript and TypeScript, including tests and type annotations.
+      model: js-specialist-3b
+      reads: [task]
+      instruction: |
+        You are a JavaScript and TypeScript specialist. Prefer standard library solutions.
+        Write the implementation first, then a short list of assumptions and edge cases.
+        Put the final deliverable in the artifact named "answer".
+      writes:
+        - name: answer
+          type: code
+          media_type: text/typescript
+    - id: generic-coder
+      kind: worker
+      description: Writes code in any language and explains trade-offs and alternatives.
+      model: coder-7b
+      reads: [task]
+      instruction: |
+        You are a general software engineer. Solve the request in the language it asks for.
+        If the request is ambiguous, state the assumption you chose and proceed.
+        Put the final deliverable in the artifact named "answer".
+      writes:
+        - name: answer
+          type: code
+          media_type: text/plain
+  edges:
+    - from: coding-triage
+      to: js-specialist
+      when: The request is specifically about JavaScript or TypeScript code, types, or tooling.
+      examples:
+        - Add types to this React hook.
+        - Fix this Promise chain so errors propagate.
+        - Write a Vitest test for this reducer.
+      artifact: code
+      priority: 20
+    - from: coding-triage
+      to: generic-coder
+      when: The request is programming-related but not specifically JavaScript or TypeScript.
+      examples:
+        - Implement quicksort in Rust.
+        - Explain how a database index works.
+        - Debug this Go HTTP handler.
+      artifact: code
+      priority: 0

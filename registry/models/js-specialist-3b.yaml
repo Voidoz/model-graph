@@ -1,0 +1,55 @@
+# Tutorial model manifest. Install this tag in Ollama before a live run:
+#   ollama pull qwen2.5-coder:3b
+
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: js-specialist-3b
+  name: JavaScript Specialist (3B)
+  version: 0.3.0
+  description: A small coding model tuned for JavaScript and TypeScript implementation and tests.
+  labels:
+    role: worker
+    domain: coding
+    language: javascript
+  authors:
+    - Model Graph contributors
+spec:
+  provider: ollama
+  model: qwen2.5-coder:3b
+  endpoint: http://127.0.0.1:11434
+  context_window: 32768
+  max_output_tokens: 4096
+  capabilities: [chat]
+  limits:
+    default_temperature: 0.1
+    default_max_output_tokens: 2048
+    timeout_seconds: 120
+  cost:
+    pricing: free
+    input_per_million_usd: 0
+    output_per_million_usd: 0
+    notes: Local inference; no marginal API cost.
+  latency_ms:
+    p50: 900
+    p95: 3500
+  resources:
+    vram_gb: 4
+    ram_gb: 8
+    disk_gb: 2.0
+    cpu_only: true
+    network_access: loopback
+  license:
+    name: apache-2.0
+    url: https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct
+    weights_uri: hf://Qwen/Qwen2.5-Coder-3B-Instruct
+    commercial_use: true
+    redistribution: true
+    notes: Example manifest. Confirm the upstream license before redistribution.
+  integrity:
+    sha256: null
+    revision: ollama:qwen2.5-coder:3b
+  eval:
+    suite: js-specialist
+    notes: Baseline only; no fine-tuned evaluation has been recorded yet.
+  notes: Illustrative manifest. In a real graph, a fine-tuned version would replace this base model.

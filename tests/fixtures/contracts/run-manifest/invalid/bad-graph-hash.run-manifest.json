@@ -1,0 +1,161 @@
+{
+  "run_id": "run_fixture_parent",
+  "deployment_revision": "rev_0123456789abcdef",
+  "target": "portable",
+  "status": "final",
+  "outcome": "succeeded",
+  "graph": {
+    "id": "composed-assistant",
+    "version": "1.0.0",
+    "hash": "sha256:not-a-hash",
+    "source": "examples/composed-assistant.graph.yaml"
+  },
+  "request": {
+    "task": "Write a debounce function in TypeScript."
+  },
+  "models": [
+    {
+      "node": "domain-triage",
+      "ref": "router-small@1.0.0",
+      "version": "1.0.0",
+      "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "provider": "mock",
+      "model": "router-small",
+      "resolved_revision": null,
+      "revision_reason": "model manifest does not pin spec.integrity.revision",
+      "capabilities": [
+        "chat",
+        "json_mode"
+      ]
+    },
+    {
+      "node": "js-specialist",
+      "ref": "js-specialist-3b@1.0.0",
+      "version": "1.0.0",
+      "hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "provider": "mock",
+      "model": "js-specialist-3b",
+      "resolved_revision": "rev_weights_42",
+      "revision_reason": null,
+      "capabilities": [
+        "chat",
+        "json_mode",
+        "seeded"
+      ]
+    }
+  ],
+  "budget": {
+    "max_steps": 8,
+    "used_steps": 2,
+    "max_depth": 3,
+    "max_total_tokens": 32000,
+    "used_tokens": 512,
+    "max_cost_usd": 0.0,
+    "used_cost_usd": 0.0,
+    "max_wall_seconds": 300.0,
+    "elapsed_seconds": 1.25,
+    "on_budget_exhausted": "fail"
+  },
+  "seed": 42,
+  "environment": {
+    "modelgraph_version": "0.3.0",
+    "python_version": "3.12.6",
+    "python_implementation": "CPython",
+    "platform": "Linux-6.8.0-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "cpu_count": 16,
+    "memory_bytes": 34359738368,
+    "hostname": "fixture-host",
+    "pid": 4242,
+    "providers": [
+      {
+        "name": "mock",
+        "version": "0.3.0"
+      }
+    ]
+  },
+  "renderer_version": "2",
+  "parser_version": "2",
+  "ir_version": "modelgraph/ir/v0",
+  "profile": {
+    "name": "local-8gb",
+    "providers": [
+      "mock"
+    ],
+    "budget_overrides": {
+      "max_steps": 8
+    }
+  },
+  "profile_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "prune": {
+    "profile": "local-8gb",
+    "removed_nodes": [],
+    "removed_edges": [],
+    "removed_exit_artifacts": [],
+    "warnings": []
+  },
+  "prune_hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "started_at": "2026-10-25T10:00:00Z",
+  "finished_at": "2026-10-25T10:00:02Z",
+  "usage": {
+    "steps": 2,
+    "input_tokens": 412,
+    "output_tokens": 100,
+    "total_tokens": 512,
+    "cost_usd": 0.0,
+    "elapsed_seconds": 1.25
+  },
+  "path": [
+    {
+      "node": "domain-triage",
+      "kind": "router",
+      "decision": "route",
+      "to": "coding-specialist",
+      "confidence": 0.95,
+      "reason": "the request asks for TypeScript code"
+    },
+    {
+      "node": "coding-specialist",
+      "kind": "subgraph",
+      "graph": "coding-specialist",
+      "graph_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "answer",
+      "type": "code",
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "producer": "js-specialist",
+      "bytes": 42,
+      "exit": true
+    }
+  ],
+  "exit_artifacts": [
+    {
+      "name": "answer",
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  ],
+  "trace": "trace.jsonl",
+  "error": null,
+  "parent_run_id": null,
+  "subgraphs": [
+    {
+      "node": "coding-specialist",
+      "graph": "coding-specialist",
+      "hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "run_id": "run_fixture_child",
+      "parent_run_id": "run_fixture_parent",
+      "status": "final",
+      "outcome": "succeeded",
+      "manifest": "subgraphs/run_fixture_child/run.json"
+    }
+  ],
+  "model_loads": [
+    {
+      "model": "router-small",
+      "cold_load_ms": 1.2
+    }
+  ]
+}

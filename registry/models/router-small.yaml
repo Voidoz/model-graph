@@ -1,0 +1,50 @@
+# Tutorial model manifest. Install this tag in Ollama before a live run:
+#   ollama pull qwen2.5:1.5b-instruct
+
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: router-small
+  name: Small Routing Model
+  version: 1.0.0
+  description: A small local model used as a routing decider. Chosen for low latency and JSON reliability.
+  labels:
+    role: router
+  authors:
+    - Model Graph contributors
+spec:
+  provider: ollama
+  model: qwen2.5:1.5b-instruct
+  endpoint: http://127.0.0.1:11434
+  context_window: 32768
+  max_output_tokens: 1024
+  capabilities: [chat, json_mode]
+  limits:
+    default_temperature: 0.0
+    default_max_output_tokens: 512
+    timeout_seconds: 60
+  cost:
+    pricing: free
+    input_per_million_usd: 0
+    output_per_million_usd: 0
+    notes: Local inference; no marginal API cost.
+  latency_ms:
+    p50: 250
+    p95: 900
+  resources:
+    vram_gb: 2
+    ram_gb: 4
+    disk_gb: 1.2
+    cpu_only: true
+    network_access: loopback
+  license:
+    name: apache-2.0
+    url: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct
+    weights_uri: hf://Qwen/Qwen2.5-1.5B-Instruct
+    commercial_use: true
+    redistribution: true
+    notes: Example manifest. Confirm the upstream license before redistribution.
+  integrity:
+    sha256: null
+    revision: ollama:qwen2.5:1.5b-instruct
+  notes: Illustrative manifest for local development; benchmark on your hardware before trusting latency.

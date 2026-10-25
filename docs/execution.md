@@ -257,24 +257,88 @@ immutable deployment revision that served the request:
 ```json
 {
   "run_id": "run_01J9Z3K4",
-  "deployment_revision": "rev_01J9Z3K4",
-  "target": "fused",
-  "graph": {"id": "composed-assistant", "version": "1.0.0", "hash": "sha256:..."},
+  "deployment_revision": "rev_6f2a1c9b4e8d2077",
+  "target": "portable",
+  "status": "final",
+  "outcome": "succeeded",
+  "graph": {"id": "composed-assistant", "version": "1.0.0", "hash": "sha256:...", "source": "examples/composed-assistant.graph.yaml"},
   "ir_version": "modelgraph/ir/v0",
-  "renderer_version": "1",
+  "renderer_version": "2",
+  "parser_version": "2",
   "models": [
-    {"ref": "router-small", "version": "1.0.0", "hash": "sha256:...", "provider": "ollama", "resolved_model": "qwen2.5:1.5b-instruct"},
-    {"ref": "js-specialist-3b", "version": "0.3.0", "hash": "sha256:...", "provider": "llamacpp", "resolved_model": "js-specialist-3b-q4_k_m.gguf"}
+    {"node": "domain-triage", "ref": "router-small", "version": "1.0.0", "hash": "sha256:...", "provider": "ollama", "model": "qwen2.5:1.5b-instruct", "resolved_revision": null, "revision_reason": "model manifest does not pin spec.integrity.revision"}
   ],
-  "profile": {"name": "local-8gb", "capabilities": ["cpu"], "license_allow": ["apache-2.0", "mit"]},
-  "budget": {"max_steps": 8, "max_cost_usd": 0.05, "max_total_tokens": 32000},
+  "profile": {"name": "local-8gb", "providers": ["ollama", "llamacpp"], "licenses": ["apache-2.0", "mit"]},
+  "profile_hash": "sha256:...",
+  "prune": {"profile": "local-8gb", "removed_nodes": [], "warnings": []},
+  "prune_hash": "sha256:...",
+  "budget": {"max_steps": 8, "max_depth": 3, "max_total_tokens": 32000, "max_cost_usd": 0.05},
   "seed": 42,
+  "environment": {"python_version": "3.12.6", "platform": "Linux-...", "providers": [{"name": "ollama", "version": "0.4.0"}], "hostname": "workstation", "pid": 4242},
   "started_at": "2026-10-22T10:00:00Z",
   "finished_at": "2026-10-22T10:00:07Z",
-  "outcome": "succeeded",
-  "usage": {"steps": 3, "input_tokens": 2011, "output_tokens": 842, "cost_usd": 0.0}
+  "usage": {"steps": 3, "input_tokens": 2011, "output_tokens": 842, "total_tokens": 2853, "cost_usd": 0.0},
+  "artifacts": [{"name": "answer", "type": "code", "hash": "sha256:...", "producer": "js-specialist", "bytes": 812, "exit": true}],
+  "exit_artifacts": [{"name": "answer", "hash": "sha256:..."}],
+  "trace": "trace.jsonl",
+  "parent_run_id": null,
+  "subgraphs": [],
+  "error": null
 }
 ```
+
+### 5.1 Manifest lifecycle, linkage, and recovery
+
+A persisted run writes `runs/<run-id>/run.json` twice:
+
+1. **Provisional**, before the first node runs: `status: provisional`, `outcome: running`,
+   `finished_at: null`. A crash leaves this file behind instead of no evidence.
+2. **Final**, at the end: the outcome, usage, error, exit artifact hashes, and timestamps are
+   filled in. The write uses a temporary file, `fsync`, and `os.replace`, so a reader never sees
+   a half-written manifest. Failed and budget-exhausted runs finalize too.
+
+The manifest pins:
+
+- graph id, version, hash, and source;
+- every resolved model ref with its manifest version/hash, provider, resolved model, and
+  resolved revision. When the revision is unknown the field is `null` and `revision_reason`
+  says why;
+- renderer, parser, and IR versions, plus a `deployment_revision` hash over the graph hash,
+  model hashes, target, and compiler/IR identity (ADR-0013);
+- the effective profile and prune report, with canonical hashes when present;
+- budget, seed, usage, and environment (Python, platform, CPU/memory, provider adapter
+  versions, hostname, and PID);
+- outcome, error, artifacts, exit artifact hashes, and the trace path;
+- `parent_run_id` and a `subgraphs` index. A subgraph invocation also writes its own final
+  manifest at `runs/<run-id>/subgraphs/<child-run-id>/run.json` with `parent_run_id` set and
+  the parent's trace at `../../trace.jsonl`.
+
+The graph hash is the source of truth for replay. `mg replay` recompiles the graph source and
+refuses when the manifest's `graph.hash` differs, unless `--allow-ir-mismatch` is passed; the
+override is recorded in `replay.json` rather than silently applied. The trace replay compares
+the recorded path and exit artifact hashes, while re-send replay compares provider output and
+usage instead of claiming equality.
+
+Recovery is a library operation in `modelgraph.runtime.manifest`:
+
+- `recover_interrupted_run(run_dir)` turns a provisional manifest into `status: interrupted`,
+  `outcome: interrupted`, a finish timestamp, and `error.code: MG-2001` when the recorded PID
+  is dead on the same host. A live process is left alone. If process identity is unavailable,
+  recovery requires an explicit `stale_after_seconds`.
+- `recover_interrupted_runs(runs_dir)` scans top-level and nested subgraph run directories.
+  `run_graph` calls it before writing a new provisional manifest, so a later run repairs
+  abandoned evidence without a separate daemon. `mg runs show RUN` recovers one run and
+  `mg runs list` recovers the directory before listing, so inspection itself turns a crashed
+  provisional file into `interrupted` rather than leaving it reported as `running` forever.
+
+Interrupted means "the runtime never reached finalization"; the partial trace, path, and
+artifacts that exist are still valid evidence. It does not mean the run was cancelled by a
+user or that a provider failed. `MG-2001` is the runtime code for recovery of a run that never
+finalized.
+
+The canonical contract is `schemas/run-manifest.schema.json`; the contract suite validates the
+schema plus final, provisional, and interrupted fixtures.
+
 
 ## 6. Pruning and lazy loading
 

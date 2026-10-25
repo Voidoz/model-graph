@@ -1,0 +1,46 @@
+apiVersion: modelgraph/eval/v0
+kind: EvalSuite
+metadata:
+  id: iteration/routing-coding
+  name: Coding triage routing fixture for revision tests
+  version: 1.0.0
+  description: Two synthetic cases that exercise the coding-triage router offline.
+  labels:
+    level: routing
+    domain: coding
+    provider: mock
+  authors:
+    - Model Graph contributors
+  license: CC0-1.0
+spec:
+  level: routing
+  provider: mock
+  claim: Synthetic routing fixture; it validates the revision evidence path, not model quality.
+  target:
+    graph: examples/coding-specialist.graph.yaml
+    router: coding-triage
+  metric: oracle_agreement
+  thresholds:
+    oracle_agreement: 1.0
+    protocol_error_rate: 0.0
+    cost_per_task_usd: 0.0
+  budget:
+    max_cost_usd: 0.05
+    max_tokens: 200000
+  oracle:
+    labeling_method: synthetic-authored
+    labeling_cost_usd: 0.0
+    sampled_from: tests/iteration/fixtures/evals/routing-coding/cases.jsonl
+    ambiguity_rule: No ambiguous cases; both requests are unambiguously routed.
+  calibration:
+    bins: 2
+    threshold_steps: 2
+  selection:
+    reason: Two cases keep the revision test fast and offline.
+  provenance:
+    source: Hand-written revision-test fixture.
+    contamination: checked
+    notes: No benchmark data.
+  cases: cases.jsonl
+  judge:
+    enabled: false

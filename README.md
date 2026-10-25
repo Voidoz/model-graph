@@ -9,14 +9,18 @@ which expert should see the request, the expert answers, and the graph returns t
 result. Experts can be trained by different people on ordinary hardware, versioned
 independently, and pruned when a deployment does not need them.
 
-> **Status: v0.3.0 — GUI, evaluation, and pruning MVP.** The repository has a
+> **Status: v0.4.0 — measured, revisioned graph runtime.** The repository has a
 > runnable vertical slice — schema and semantic validation, router/worker/joiner/subgraph
 > execution, deterministic mock and local HTTP providers, hard budgets, traces, run manifests,
 > and offline replay — plus a loopback-only `mg ui` GUI for graph inspection, mock runs,
-> traces, artifacts, models, history, and replay. Evaluation, compiled targets, canaries, and
-> model-swap promotion are the next tracks. Live local-model validation passed on CPU and on an
-> RTX 3080 via Ollama Vulkan. See [docs/quickstart.md](docs/quickstart.md) and
-> [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md).
+> traces, artifacts, models, history, and replay. The measurement layer includes node, routing,
+> end-to-end, and safety gates; model changes go through impact analysis and immutable revisions
+> with atomic promotion and rollback. Trace-to-dataset export and a tested starter library are
+> in place. Resident/compiled targets and canaries are the next tracks. Live local-model
+> validation passed on CPU and on an RTX 3080 via Ollama Vulkan. Start with
+> [docs/tutorial.md](docs/tutorial.md) for the guided path,
+> [docs/quickstart.md](docs/quickstart.md) for the command reference, and
+> [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) for what comes next.
 
 ## The idea in one picture
 
@@ -51,12 +55,13 @@ the language is the bus.
 
 The first runnable slice is in place. It validates graphs, runs them with a deterministic
 mock provider or a local Ollama endpoint, records a trace and run manifest, and replays a
-recorded run offline.
+recorded run offline. The guided version of this section, including pruning and a node
+evaluation, is [docs/tutorial.md](docs/tutorial.md).
 
 ```text
 uv sync
-uv run mg validate examples/hello-triage.graph.yaml
-uv run mg run examples/hello-triage.graph.yaml --provider mock
+uv run mg validate graphs/hello-triage.graph.yaml
+uv run mg run graphs/hello-triage.graph.yaml --provider mock
 uv run mg runs list
 uv run mg replay runs/<run-id>
 uv run mg trace show runs/<run-id>
@@ -68,17 +73,19 @@ default provider:
 ```text
 ollama pull qwen2.5:1.5b-instruct
 ollama pull qwen2.5-coder:7b
-uv run mg run examples/hello-triage.graph.yaml --registry examples/models
+uv run mg run graphs/hello-triage.graph.yaml --registry registry/models
 ```
 
-The composed example exercises nested subgraphs:
+The starter library also includes a nested coding team and a writing/research graph:
 
 ```text
-uv run mg run examples/composed-assistant.graph.yaml --provider mock
+uv run mg run graphs/coding-specialist.graph.yaml --provider mock
+uv run mg run graphs/composed-assistant.graph.yaml --provider mock
+uv run mg run graphs/writing-studio.graph.yaml --provider mock
 ```
 
-See [docs/quickstart.md](docs/quickstart.md) for the full walkthrough and the current MVP
-scope.
+See [docs/quickstart.md](docs/quickstart.md) for the full command reference and
+[docs/tutorial.md](docs/tutorial.md) for the tested first-run path.
 
 ## Local GUI
 
@@ -101,16 +108,39 @@ page requirements, and security model.
 The measurement layer is runnable offline:
 
 ```text
-uv run mg eval node --suite evals/mock/js-specialist --provider mock
+uv run mg eval node --suite evals/mock/js-specialist \
+  --graph graphs/coding-specialist.graph.yaml --provider mock
 uv run mg eval routing --suite evals/mock/triage --provider mock
 uv run mg eval e2e --suite evals/e2e/composed-assistant \
-  --graph examples/composed-assistant.graph.yaml --provider mock --profile local-8gb
+  --graph graphs/composed-assistant.graph.yaml --provider mock --profile local-8gb
 make eval-gates
 ```
 
 `mg eval compare` enforces the contribution gates against committed baselines. Run profiles
-prune branches the machine cannot serve; `mg run --profile examples/profiles/local-4gb.yaml`
-removes the 6GB story/coder branches and reports the removals.
+prune branches the machine cannot serve; `mg run --profile profiles/local-4gb.yaml` removes
+the 6GB story/coder branches and reports the removals.
+
+## Revisions and training data
+
+A model swap is a candidate revision, not a live mutation. Inspect its impact before loading a
+model, require the change-class evidence, then promote atomically or roll back:
+
+```text
+uv run mg status --revisions
+uv run mg swap node js-specialist --to js-specialist-3b --dry-run
+uv run mg change explain <change-id>
+uv run mg promote --revision <revision> --dry-run
+```
+
+Accepted traces can become a consented, redacted, deduplicated dataset with frozen grouped
+splits:
+
+```text
+uv run mg data export --run runs/<run-id> --out /tmp/dataset \
+  --consent "operator approved local training"
+```
+
+See [docs/iteration.md](docs/iteration.md) and [docs/training.md](docs/training.md).
 
 ## Design principles
 
@@ -139,6 +169,7 @@ removes the 6GB story/coder branches and reports the removals.
 
 | Path | Purpose |
 | --- | --- |
+| [`docs/tutorial.md`](docs/tutorial.md) | Guided install → validate → mock/live run → trace → prune → node eval |
 | [`docs/quickstart.md`](docs/quickstart.md) | Install, validate, run, inspect, and replay the MVP |
 | [`docs/vision.md`](docs/vision.md) | Problem, thesis, hypotheses, kill criteria, what this is not |
 | [`docs/architecture.md`](docs/architecture.md) | System architecture, components, request lifecycle, deployment |
@@ -156,15 +187,19 @@ removes the 6GB story/coder branches and reports the removals.
 | [`docs/glossary.md`](docs/glossary.md) | Shared vocabulary |
 | [`docs/development.md`](docs/development.md) | Toolchain, checks, and repository layout |
 | [`docs/adr/`](docs/adr/) | Accepted architectural decisions and their trade-offs |
-| [`schemas/`](schemas/) | Machine-checkable contracts (graph, model manifest, envelope, ticket) |
-| [`examples/`](examples/) | Worked graph, manifest, and envelope examples |
+| [`schemas/`](schemas/) | Machine-checkable contracts: graph, model manifest, envelope, ticket, eval suite, run manifest, dataset, change set |
+| [`graphs/`](graphs/) | Tested starter library: hello-triage, coding-specialist, composed-assistant, writing-studio |
+| [`profiles/`](profiles/) | Starter run profiles: 4GB, 8GB, and an air-gapped audit profile |
+| [`registry/models/`](registry/models/) | Model manifests for the starter/library tutorial models |
+| [`examples/`](examples/) | Design fixtures and the envelope example used by eval suites |
 | [`.scratch/`](.scratch/) | Working ideas, open questions, ticket backlog, journal, handoff |
 
 ## Read in this order
 
+0. [`docs/tutorial.md`](docs/tutorial.md) — run the starter library before reading the design.
 1. This README and [`docs/vision.md`](docs/vision.md) — why the project exists.
 2. [`docs/architecture.md`](docs/architecture.md) — how the pieces fit.
-3. [`docs/graph-model.md`](docs/graph-model.md) and [`examples/`](examples/) — what you author.
+3. [`docs/graph-model.md`](docs/graph-model.md) and [`graphs/`](graphs/) — what you author.
 4. [`docs/protocol.md`](docs/protocol.md) and [`docs/execution.md`](docs/execution.md) — what runs.
 5. [`docs/gpu-execution.md`](docs/gpu-execution.md) — how a graph can run GPU-resident, and what that cannot fix.
 6. [`docs/performance.md`](docs/performance.md) — how the graph compares to an LLM, what to compile, and what parity requires.

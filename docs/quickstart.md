@@ -7,6 +7,12 @@ graph YAML -> schema + semantic validation -> compiled IR -> routed execution
            -> scoped prompts -> provider -> artifacts -> trace + run manifest -> replay
 ```
 
+**New here?** Follow [`tutorial.md`](tutorial.md) first. It is the tested, copy-paste path
+through install, a mock run, a live local run, tracing, pruning, and a node evaluation. This
+page is the fuller command reference. The starter library lives in [`graphs/`](../graphs/),
+profiles in [`profiles/`](../profiles/), and model manifests in
+[`registry/models/`](../registry/models/).
+
 ## 1. Install
 
 ```text
@@ -19,24 +25,26 @@ Python 3.12 is pinned in `.python-version`. The test suite runs offline.
 ## 2. Validate a graph
 
 ```text
-uv run mg validate examples/hello-triage.graph.yaml
-uv run mg validate examples/composed-assistant.graph.yaml
+uv run mg validate graphs/*.graph.yaml
+uv run mg validate graphs/hello-triage.graph.yaml
+uv run mg validate graphs/composed-assistant.graph.yaml
 ```
 
-You should see `valid` plus a V-15 warning on the hello graph: its two workers both write the
-`answer` exit artifact with different types (`code` and `text`). That warning is intentional;
+You should see `valid` plus an `MG-1016` warning (rule V-15) on the hello graph: its two
+workers both write the `answer` exit artifact with different types (`code` and `text`). That
+warning is intentional;
 the graph is still valid.
 
 A broken graph exits 1 and reports every error it can find. Machine-readable output:
 
 ```text
-uv run mg validate examples/hello-triage.graph.yaml --json
+uv run mg validate graphs/hello-triage.graph.yaml --json
 ```
 
 ## 3. Run offline with the mock provider
 
 ```text
-uv run mg run examples/hello-triage.graph.yaml --provider mock
+uv run mg run graphs/hello-triage.graph.yaml --provider mock
 ```
 
 The mock provider is deterministic. The default mock route selects the first menu entry, which
@@ -86,7 +94,7 @@ The example manifests target Ollama. Install the model and run:
 ```text
 ollama pull qwen2.5:1.5b-instruct
 ollama pull qwen2.5-coder:7b
-uv run mg run examples/hello-triage.graph.yaml --registry examples/models
+uv run mg run graphs/hello-triage.graph.yaml --registry registry/models
 ```
 
 `--provider auto` (the default) uses the provider declared in each model manifest. You can
@@ -115,7 +123,9 @@ service can leave the old CUDA runner (and its watchdog timeouts) in place.
 ## 7. Nested graph
 
 ```text
-uv run mg run examples/composed-assistant.graph.yaml --provider mock
+uv run mg run graphs/composed-assistant.graph.yaml --provider mock
+uv run mg run graphs/coding-specialist.graph.yaml --provider mock
+uv run mg run graphs/writing-studio.graph.yaml --provider mock
 ```
 
 This routes `domain-triage -> coding subgraph -> coding-triage -> js-specialist`. The inner
@@ -150,10 +160,11 @@ model server. See [gui.md](gui.md) for the JSON API and security contract.
 ## 9. Evaluate and prune
 
 ```text
-uv run mg eval node --suite evals/mock/js-specialist --provider mock
+uv run mg eval node --suite evals/mock/js-specialist \
+  --graph graphs/coding-specialist.graph.yaml --provider mock
 uv run mg eval routing --suite evals/mock/triage --provider mock
 uv run mg eval e2e --suite evals/e2e/composed-assistant \
-  --graph examples/composed-assistant.graph.yaml --provider mock --profile local-8gb
+  --graph graphs/composed-assistant.graph.yaml --provider mock --profile local-8gb
 make eval-gates
 ```
 
@@ -164,13 +175,17 @@ make eval-gates
 Profiles prune branches the deployment cannot serve:
 
 ```text
-uv run mg run examples/composed-assistant.graph.yaml --provider mock \
-  --profile examples/profiles/local-4gb.yaml
+uv run mg run graphs/composed-assistant.graph.yaml --provider mock \
+  --profile profiles/local-4gb.yaml
+uv run mg run graphs/hello-triage.graph.yaml --provider mock \
+  --profile profiles/no-network.yaml   # audit: fails MG-1005, no in-process provider in v0
 ```
 
 The 4GB profile removes the 6GB story and generic-coder branches, records the `PruneReport`
-in the run manifest, and leaves the authored YAML unchanged. The mock run works offline;
-without the profile, `auto`/`ollama` uses the configured local models.
+in the run manifest, and leaves the authored YAML unchanged. The 8GB profile removes nothing
+from the starter library. `no-network` prunes every starter node because local Ollama is
+loopback network access; see [`tutorial.md`](tutorial.md#7-prune-with-a-profile). The mock run
+works offline; without the profile, `auto`/`ollama` uses the configured local models.
 
 ## What the MVP includes
 
@@ -184,21 +199,26 @@ without the profile, `auto`/`ollama` uses the configured local models.
 - Scoped views (a node sees only its declared reads).
 - Deterministic mock provider and OpenAI-compatible/Ollama HTTP adapters.
 - Content-addressed artifacts, trace, envelope, run manifest, and replay.
-- CLI commands: `validate`, `compile`, `run`, `replay`, `trace show`, `runs`, `models`, `ui`.
+- CLI commands: `validate`, `compile`, `run`, `replay`, `trace show`, `runs`, `models`, `ui`,
+  `eval`, `data export`, `status`, `graph diff`, `swap`, `change`, `promote`, and `rollback`.
+- Node/routing/e2e evaluation, safety gates, baselines, and offline contribution checks.
+- Change sets, impact analysis, immutable revisions, atomic promotion, and rollback.
+- Consented, redacted trace-to-dataset export with frozen grouped splits.
 - A local GUI for graph inspection, mock runs, traces, artifacts, models, history, and replay.
+- A tested starter library and tutorial.
 
 ## What is not in the MVP yet
 
 - Route flattening, AOT prefix compilation, cross-request batching.
-- Canary/shadow, hot swap, and revision promotion (`T-0038`/`T-0039`).
-- The full evaluation harness and contribution gates.
-- Adapter submission and distillation.
+- Canary/shadow, in-flight pinning, and hot swap (`T-0039`).
+- Resident/fused/compiled targets and graph distillation.
+- Adapter submission and specialist/router training recipes.
 - Bounded fan-out/ensemble joins.
 - Provider streaming and tools/code execution.
 - Graph editing and model-swap UX (`T-0046`).
 
-The next engineering milestones are the evaluation harness and the model-swap workflow. The
-performance track is Phase 5 and deliberately does not block the usable local workflow.
+The next milestones are the human live tutorial pass and the training flywheel. The performance
+track is Phase 5 and deliberately does not block the usable local workflow.
 
 ## Test it
 

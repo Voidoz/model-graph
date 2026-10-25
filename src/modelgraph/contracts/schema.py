@@ -16,6 +16,10 @@ SCHEMA_FILES = {
     "manifest": "model-manifest.schema.json",
     "envelope": "envelope.schema.json",
     "ticket": "ticket.schema.json",
+    "eval-suite": "eval-suite.schema.json",
+    "run-manifest": "run-manifest.schema.json",
+    "dataset": "dataset.schema.json",
+    "change-set": "change-set.schema.json",
 }
 
 

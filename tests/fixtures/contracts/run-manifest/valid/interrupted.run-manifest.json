@@ -1,0 +1,87 @@
+{
+  "run_id": "run_fixture_interrupted",
+  "deployment_revision": "rev_0011223344556677",
+  "target": "portable",
+  "status": "interrupted",
+  "outcome": "interrupted",
+  "graph": {
+    "id": "hello-triage",
+    "version": "1.0.0",
+    "hash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "source": "examples/hello-triage.graph.yaml"
+  },
+  "request": {
+    "task": "Write a debounce function in TypeScript."
+  },
+  "models": [
+    {
+      "node": "triage",
+      "ref": "router-small",
+      "version": "1.0.0",
+      "hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "provider": "mock",
+      "model": "router-small",
+      "resolved_revision": null,
+      "revision_reason": "model manifest does not pin spec.integrity.revision",
+      "capabilities": ["chat", "json_mode"]
+    }
+  ],
+  "budget": {
+    "max_steps": 8,
+    "used_steps": 1,
+    "max_depth": 3,
+    "max_total_tokens": 32000,
+    "used_tokens": 64,
+    "max_cost_usd": 0.25,
+    "used_cost_usd": 0.0,
+    "max_wall_seconds": 300.0,
+    "elapsed_seconds": 0.5,
+    "on_budget_exhausted": "fail"
+  },
+  "seed": 7,
+  "environment": {
+    "modelgraph_version": "0.3.0",
+    "python_version": "3.12.6",
+    "python_implementation": "CPython",
+    "platform": "Linux-6.8.0-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "cpu_count": 16,
+    "memory_bytes": 34359738368,
+    "hostname": "fixture-host",
+    "pid": 4244,
+    "providers": []
+  },
+  "renderer_version": "2",
+  "parser_version": "2",
+  "ir_version": "modelgraph/ir/v0",
+  "profile_hash": null,
+  "prune_hash": null,
+  "started_at": "2026-10-25T10:00:00Z",
+  "finished_at": "2026-10-25T10:00:03Z",
+  "usage": {
+    "steps": 1,
+    "input_tokens": 64,
+    "output_tokens": 0,
+    "total_tokens": 64,
+    "cost_usd": 0.0,
+    "elapsed_seconds": 0.5
+  },
+  "path": [
+    {
+      "node": "triage",
+      "kind": "router"
+    }
+  ],
+  "artifacts": [],
+  "exit_artifacts": [],
+  "trace": "trace.jsonl",
+  "error": {
+    "code": "MG-2001",
+    "message": "run did not finalize; marked interrupted by recovery",
+    "path": null,
+    "details": {"previous_status": "provisional", "previous_pid": 4244}
+  },
+  "parent_run_id": null,
+  "subgraphs": [],
+  "model_loads": []
+}

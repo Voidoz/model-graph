@@ -12,9 +12,11 @@ import typer
 
 from modelgraph import __version__
 from modelgraph.compiler import compile_graph
+from modelgraph.compiler.ir import CompiledGraph
 from modelgraph.contracts.graph import Defaults
 from modelgraph.contracts.loader import load_document
 from modelgraph.contracts.manifest import ModelManifest
+from modelgraph.data import export_dataset
 from modelgraph.errors import ModelGraphError
 from modelgraph.evaluation import (
     E2EConfiguration,
@@ -41,8 +43,29 @@ from modelgraph.pruning import (
     resolve_profile_path,
 )
 from modelgraph.registry import Registry, default_registry
+from modelgraph.revision import (
+    ChangeSetError,
+    RevisionStore,
+    analyse_impact,
+    annotate_run_trace,
+    bootstrap_revision,
+    default_store_dir,
+    diff_graphs,
+    evaluate_coverage,
+    format_change_summary,
+    format_diff,
+    format_impact,
+    load_evidence,
+    mark_promoted,
+    promotion_plan,
+    propose_graph_change,
+    propose_swap,
+    status_for_change,
+    status_report,
+)
 from modelgraph.runtime.budget import Budget
 from modelgraph.runtime.engine import run_graph
+from modelgraph.runtime.manifest import read_run_manifest, recover_interrupted_runs
 from modelgraph.runtime.replay import replay_run
 from modelgraph.runtime.trace import read_events
 
@@ -59,10 +82,21 @@ eval_app = typer.Typer(
     help="Run node, routing, and e2e evaluation suites, and compare against baselines.",
     no_args_is_help=True,
 )
+data_app = typer.Typer(
+    help="Export recorded traces into consented, redacted training datasets.",
+    no_args_is_help=True,
+)
+graph_app = typer.Typer(help="Compare graph revisions and deployments.", no_args_is_help=True)
+swap_app = typer.Typer(help="Propose model swaps as candidate change sets.", no_args_is_help=True)
+change_app = typer.Typer(help="List, show, and explain change sets.", no_args_is_help=True)
 app.add_typer(trace_app, name="trace")
 app.add_typer(runs_app, name="runs")
 app.add_typer(models_app, name="models")
 app.add_typer(eval_app, name="eval")
+app.add_typer(data_app, name="data")
+app.add_typer(graph_app, name="graph")
+app.add_typer(swap_app, name="swap")
+app.add_typer(change_app, name="change")
 
 DEMO_TASK = "Write a debounce function in TypeScript."
 
@@ -402,6 +436,132 @@ def _registry(model_dirs: list[Path]) -> Registry:
     return default_registry()
 
 
+@data_app.command("export")
+def data_export(
+    run: list[Path] = typer.Option(..., "--run", help="Recorded run directory (repeatable)."),
+    out: Path = typer.Option(..., "--out", help="Dataset output directory."),
+    dataset_id: str = typer.Option("trace-export", "--dataset-id", help="Dataset id."),
+    dataset_name: str = typer.Option("Trace export", "--dataset-name"),
+    dataset_version: str = typer.Option("0.1.0", "--dataset-version"),
+    dataset_description: str = typer.Option(
+        "Trace-derived examples exported by mg data export.", "--dataset-description"
+    ),
+    task: str | None = typer.Option(None, "--task", help="Dataset task description."),
+    license_id: str = typer.Option("unknown", "--license", help="Dataset license id."),
+    license_uri: str | None = typer.Option(None, "--license-uri"),
+    consent: str | None = typer.Option(
+        None,
+        "--consent",
+        help="Recorded consent statement/id. Required unless --no-require-consent is explicit.",
+    ),
+    consent_scope: str = typer.Option("local-training", "--consent-scope"),
+    require_consent: bool = typer.Option(
+        True,
+        "--require-consent/--no-require-consent",
+        help="Fail closed when consent is not recorded (default: true).",
+    ),
+    include_failures: bool = typer.Option(
+        False, "--include-failures", help="Include non-succeeded runs; label them failure."
+    ),
+    redact: str = typer.Option(
+        "default", "--redact", help="Redaction preset: default, none, or a YAML/JSON config path."
+    ),
+    redact_action: str = typer.Option(
+        "hash", "--redact-action", help="Default action: hash, mask, or drop."
+    ),
+    labels: list[Path] = typer.Option([], "--labels", help="Human/oracle label file (repeatable)."),
+    checks: list[Path] = typer.Option(
+        [], "--checks", help="Node check file using the eval CheckSpec shape (repeatable)."
+    ),
+    allow_command_checks: bool = typer.Option(
+        False, "--allow-command-checks", help="Execute local command checks from --checks."
+    ),
+    eval_suite: list[Path] = typer.Option(
+        [], "--eval-suite", help="Eval suite used for contamination checking (repeatable)."
+    ),
+    dedupe: str = typer.Option(
+        "exact+near", "--dedupe", help="Deduplication: none, exact, near, or exact+near."
+    ),
+    near_duplicate_distance: int = typer.Option(
+        3, "--near-duplicate-distance", help="SimHash Hamming-distance threshold (0-64)."
+    ),
+    group_by: str = typer.Option(
+        "source", "--group-by", help="Split grouping: source, graph, run, or license."
+    ),
+    split_ratio: str = typer.Option(
+        "0.8,0.1,0.1", "--split-ratio", help="TRAIN,VALIDATION,TEST ratios."
+    ),
+    split_seed: str = typer.Option("modelgraph-v0", "--split-seed"),
+    split_plan: Path | None = typer.Option(
+        None, "--split-plan", help="Persist/reuse group-to-split assignments (JSON)."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable summary."),
+) -> None:
+    """Export accepted traces into a redacted, labeled, split dataset."""
+    try:
+        result = export_dataset(
+            run,
+            out,
+            dataset_id=dataset_id,
+            dataset_name=dataset_name,
+            dataset_version=dataset_version,
+            dataset_description=dataset_description,
+            task=task,
+            license_id=license_id,
+            license_uri=license_uri,
+            consent=consent,
+            consent_scope=consent_scope,
+            require_consent=require_consent,
+            include_failures=include_failures,
+            redact=redact,
+            redact_action=redact_action,
+            labels=labels,
+            checks=checks,
+            allow_command_checks=allow_command_checks,
+            eval_suites=eval_suite,
+            dedupe=dedupe,
+            near_duplicate_distance=near_duplicate_distance,
+            group_by=group_by,
+            split_ratio=split_ratio,
+            split_seed=split_seed,
+            split_plan=split_plan,
+        )
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+        return
+    examples = result.manifest["spec"]["examples"]
+    contamination = result.manifest["spec"]["eval_contamination"]
+    typer.echo(f"dataset:   {result.dataset_dir}")
+    typer.echo(f"manifest:  {result.dataset_dir / 'dataset.json'}")
+    typer.echo(
+        f"examples:  {result.examples} (train={result.counts['train']} "
+        f"validation={result.counts['validation']} test={result.counts['test']})"
+    )
+    by_node = examples.get("by_node") or {}
+    by_route = examples.get("by_route") or {}
+    node_counts = ", ".join(f"{name}={count}" for name, count in sorted(by_node.items())) or "none"
+    route_counts = (
+        ", ".join(f"{name}={count}" for name, count in sorted(by_route.items())) or "none"
+    )
+    typer.echo(f"node:      {examples['node']} (by source node: {node_counts})")
+    typer.echo(f"routing:   {examples['routing']} (per route: {route_counts})")
+    typer.echo(
+        f"consent:   {'recorded' if result.manifest['spec']['consent']['recorded'] else 'not recorded'}"
+    )
+    redaction = result.redaction
+    matched = [item["name"] for item in redaction["patterns"] if item["count"]]
+    typer.echo(
+        f"redaction: {redaction['status']} "
+        f"({redaction['total_redactions']} redaction(s)"
+        + (f"; {', '.join(matched)}" if matched else "")
+        + ")"
+    )
+    typer.echo(f"contamination: {contamination['status']} (excluded={contamination['excluded']})")
+
+
 @app.command()
 def validate(
     graphs: list[Path] = typer.Argument(..., help="Graph YAML file(s)."),
@@ -495,6 +655,9 @@ def run(
     max_steps: int | None = typer.Option(None, "--max-steps"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
     max_cost: float | None = typer.Option(None, "--max-cost"),
+    seed: int | None = typer.Option(
+        None, "--seed", help="Deterministic sampling seed passed to every provider request."
+    ),
     profile_ref: str | None = typer.Option(
         None, "--profile", help="Run profile file or profile name."
     ),
@@ -564,7 +727,10 @@ def run(
             profile=profile.to_dict() if profile is not None else None,
             prune_report=prune_report.to_dict() if prune_report is not None else None,
             model_loads=loader.records,
+            seed=seed,
         )
+        if outcome.run_dir is not None and outcome.manifest is not None:
+            annotate_run_trace(outcome.run_dir, outcome.manifest)
     except ModelGraphError as exc:
         typer.echo(f"[{exc.code}] {exc.message}", err=True)
         raise typer.Exit(code=3) from exc
@@ -704,6 +870,10 @@ def runs_list(
     """List recorded runs."""
     entries: list[dict[str, Any]] = []
     if runs_directory.exists():
+        # Inspecting the runs directory is also the recovery point for a crashed run: a
+        # provisional manifest whose process is dead is marked interrupted here, so `runs list`
+        # never keeps reporting a crashed run as "running" forever.
+        recover_interrupted_runs(runs_directory)
         for run_dir in sorted(
             (path for path in runs_directory.iterdir() if (path / "run.json").exists()),
             key=lambda path: path.stat().st_mtime,
@@ -738,12 +908,17 @@ def runs_show(
     run: Path = typer.Argument(..., help="Run directory."),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Show a run manifest."""
-    manifest_path = run / "run.json"
-    if not manifest_path.exists():
-        typer.echo(f"manifest not found: {manifest_path}", err=True)
-        raise typer.Exit(code=1)
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    """Show a run manifest, recovering a crashed provisional run first."""
+    try:
+        manifest = read_run_manifest(run, recover=True)
+    except ModelGraphError as exc:
+        message = (
+            f"manifest not found: {run / 'run.json'}"
+            if not (run / "run.json").exists()
+            else exc.message
+        )
+        typer.echo(message, err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(manifest, indent=2, ensure_ascii=False))
 
 
@@ -776,6 +951,512 @@ def models_list(
             f"{row['id']:<24} {row['version']:<8} {row['provider']:<18} "
             f"{row['model']:<32} {row['license']}"
         )
+
+
+# --------------------------------------------------------------------------------------
+# Revision and change-set commands
+# --------------------------------------------------------------------------------------
+
+
+def _revision_store(path: Path | None) -> RevisionStore:
+    return RevisionStore(path if path is not None else default_store_dir())
+
+
+def _resolve_graph_ref(ref: str, store: RevisionStore, registry: Registry) -> CompiledGraph:
+    if ref.startswith("rev_"):
+        return store.compile_revision(ref)
+    candidate = Path(ref).expanduser()
+    source: Path | None = candidate if candidate.is_file() else registry.resolve_graph(ref)
+    if source is None:
+        raise ModelGraphError(
+            f"graph {ref!r} is not a path, a registered graph ref, or a revision id in {store.root}"
+        )
+    result = compile_graph(
+        source,
+        registry=registry,
+        strict_models=True,
+        graph_paths=[source.parent],
+    )
+    if not result.ok or result.graph is None:
+        raise ModelGraphError(
+            "graph failed to compile: " + "; ".join(result.errors), path=str(source)
+        )
+    return result.graph
+
+
+def _change_payload(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "dry_run": result.get("dry_run"),
+        "active_revision": result.get("active_revision"),
+        "change": result.get("change"),
+        "impact": result.get("impact"),
+        "revision": result.get("revision"),
+    }
+
+
+@graph_app.command("diff")
+def graph_diff(
+    before: str = typer.Argument(..., help="Graph path, graph id@version, or revision id."),
+    after: str = typer.Argument(..., help="Graph path, graph id@version, or revision id."),
+    registry_dir: list[Path] = typer.Option([], "--registry", help="Model registry directory."),
+    store_path: Path | None = typer.Option(None, "--store", help="Revision store directory."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable diff."),
+) -> None:
+    """Show topology, prompt, model-binding, and policy differences between two graphs."""
+    try:
+        store = _revision_store(store_path)
+        registry = _registry(registry_dir)
+        before_graph = _resolve_graph_ref(before, store, registry)
+        after_graph = _resolve_graph_ref(after, store, registry)
+        diff = diff_graphs(before_graph, after_graph)
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(json.dumps(diff, indent=2, ensure_ascii=False))
+        return
+    for line in format_diff(diff):
+        typer.echo(line)
+
+
+@swap_app.command("node")
+def swap_node(
+    node: str = typer.Argument(..., help="Node id to rebind."),
+    to_model: str = typer.Option(
+        ..., "--to", help="Model ref (id@version) or a model manifest path."
+    ),
+    graph_path: Path | None = typer.Option(
+        None, "--graph", help="Base graph source (default: the active revision)."
+    ),
+    target: str = typer.Option("portable", "--target", help="Deployment target."),
+    base_revision: str | None = typer.Option(
+        None, "--base-revision", help="Explicit base revision (default: active)."
+    ),
+    registry_dir: list[Path] = typer.Option([], "--registry", help="Model registry directory."),
+    profile_ref: str | None = typer.Option(
+        None, "--profile", help="Profile for VRAM admission preview."
+    ),
+    store_path: Path | None = typer.Option(None, "--store", help="Revision store directory."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Compile and explain the swap without persisting anything."
+    ),
+    summary: str | None = typer.Option(None, "--summary", help="Human summary for the change."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable result."),
+) -> None:
+    """Create a candidate revision that swaps one node's model.
+
+    The active revision is never changed here. Promotion is a separate evidence-gated step.
+    """
+    try:
+        store = _revision_store(store_path)
+        result = propose_swap(
+            store,
+            node=node,
+            to_model=to_model,
+            graph_path=graph_path,
+            target=target,
+            base_revision=base_revision,
+            registry=_registry(registry_dir),
+            model_dirs=registry_dir,
+            profile=profile_ref,
+            dry_run=dry_run,
+            summary=summary,
+        )
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(json.dumps(_change_payload(result), indent=2, ensure_ascii=False))
+        return
+    if dry_run:
+        typer.echo("dry run: no candidate revision or change set was persisted")
+    for line in format_change_summary(result["change"]):
+        typer.echo(line)
+    typer.echo("")
+    for line in format_impact(result["impact"]):
+        typer.echo(line)
+
+
+@change_app.command("create")
+def change_create(
+    graph_path: Path = typer.Option(..., "--graph", help="Candidate graph source file."),
+    base_revision: str | None = typer.Option(
+        None, "--base-revision", help="Base revision (default: active)."
+    ),
+    base_graph: Path | None = typer.Option(
+        None, "--base-graph", help="Base graph source when no revision exists."
+    ),
+    target: str | None = typer.Option(
+        None, "--target", help="Deployment target (default: base revision target or portable)."
+    ),
+    registry_dir: list[Path] = typer.Option([], "--registry", help="Model registry directory."),
+    profile_ref: str | None = typer.Option(
+        None, "--profile", help="Profile for VRAM admission preview."
+    ),
+    store_path: Path | None = typer.Option(None, "--store", help="Revision store directory."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Compile and explain without persisting anything."
+    ),
+    summary: str | None = typer.Option(None, "--summary"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable result."),
+) -> None:
+    """Create a change set from an edited graph (prompt, topology, routing, or binding)."""
+    try:
+        store = _revision_store(store_path)
+        result = propose_graph_change(
+            store,
+            candidate_graph_path=graph_path,
+            base_revision=base_revision,
+            graph_path=base_graph,
+            target=target,
+            registry=_registry(registry_dir),
+            profile=profile_ref,
+            dry_run=dry_run,
+            summary=summary,
+        )
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(json.dumps(_change_payload(result), indent=2, ensure_ascii=False))
+        return
+    if dry_run:
+        typer.echo("dry run: no candidate revision or change set was persisted")
+    for line in format_change_summary(result["change"]):
+        typer.echo(line)
+    typer.echo("")
+    for line in format_impact(result["impact"]):
+        typer.echo(line)
+
+
+@change_app.command("list")
+def change_list(
+    store_path: Path | None = typer.Option(None, "--store", help="Revision store directory."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable list."),
+) -> None:
+    """List change sets in the local revision store."""
+    try:
+        store = _revision_store(store_path)
+        changes = store.list_changes()
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(json.dumps(changes, indent=2, ensure_ascii=False))
+        return
+    if not changes:
+        typer.echo(f"no change sets in {store.root}")
+        return
+    for change in changes:
+        typer.echo(
+            f"{change.get('change_id')}  {str(change.get('status')):<12} "
+            f"{str(change.get('change_class')):<14} {str(change.get('target')):<10} "
+            f"{change.get('candidate_revision')}  {change.get('summary')}"
+        )
+
+
+@change_app.command("show")
+def change_show(
+    change_id: str = typer.Argument(..., help="Change set id."),
+    store_path: Path | None = typer.Option(None, "--store", help="Revision store directory."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable change set."),
+) -> None:
+    """Show one change set, its impact report, and its evidence."""
+    try:
+        store = _revision_store(store_path)
+        change = store.load_change(change_id)
+        impact = store.load_impact(change_id)
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(json.dumps({"change": change, "impact": impact}, indent=2, ensure_ascii=False))
+        return
+    for line in format_change_summary(change):
+        typer.echo(line)
+    typer.echo("")
+    for line in format_impact(impact):
+        typer.echo(line)
+    evidence = change.get("evidence") or []
+    if evidence:
+        typer.echo("")
+        typer.echo("Evidence")
+        for item in evidence:
+            typer.echo(
+                f"  {item.get('level'):<8} valid={item.get('valid')} "
+                f"gate={item.get('gate_passed')} {item.get('path')}"
+            )
+
+
+@change_app.command("explain")
+def change_explain(
+    change_id: str = typer.Argument(..., help="Change set id."),
+    evidence: list[Path] = typer.Option(
+        [], "--evidence", help="Candidate eval report to include in coverage (repeatable)."
+    ),
+    store_path: Path | None = typer.Option(None, "--store", help="Revision store directory."),
+    profile_ref: str | None = typer.Option(
+        None, "--profile", help="Profile for VRAM admission preview."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable explanation."),
+) -> None:
+    """Explain compatibility, invalidation, VRAM, evidence coverage, and rollback."""
+    try:
+        store = _revision_store(store_path)
+        change = store.load_change(change_id)
+        impact = store.load_impact(change_id)
+        revision = store.load_revision(str(change["candidate_revision"]))
+        records = {
+            str(item.get("path")): dict(item)
+            for item in cast(list[dict[str, Any]], change.get("evidence") or [])
+        }
+        for path in evidence:
+            record = load_evidence(
+                path,
+                candidate_graph_hash=str(revision.get("graph", {}).get("hash")),
+                candidate_graph_id=str(revision.get("graph", {}).get("id")),
+            )
+            records[str(record["path"])] = record
+        evidence_records = list(records.values())
+        base_revision = change.get("base_revision")
+        if profile_ref and base_revision and store.revision_exists(str(base_revision)):
+            # Recompute the report with the requested profile instead of overwriting one field
+            # of a stale report. The stored change and impact files are not modified.
+            loaded = load_profile(profile_ref)
+            impact = analyse_impact(
+                store.compile_revision(str(base_revision)),
+                store.compile_revision(str(change["candidate_revision"])),
+                target=str(change.get("target") or "portable"),
+                base_target=cast(str | None, change.get("base_target")),
+                base_revision=str(base_revision),
+                candidate_revision=str(change["candidate_revision"]),
+                profile=loaded,
+                evidence=evidence_records,
+                store=store,
+            )
+        required = cast(list[str], impact.get("eval", {}).get("required") or [])
+        coverage = evaluate_coverage(required, evidence_records)
+        impact.setdefault("eval", {})["coverage"] = coverage
+        current = store.active_revision_id()
+        promotion = cast(dict[str, Any], change.get("promotion") or {})
+        rollback_target = promotion.get("rollback_target") or current
+        rollback = impact.setdefault("rollback", {})
+        rollback["target"] = rollback_target
+        rollback["previous"] = rollback_target
+        rollback["retained"] = bool(rollback_target and store.revision_exists(str(rollback_target)))
+        impact["status"] = status_for_change(change, impact, coverage)
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(
+            json.dumps(
+                {"change": change, "impact": impact, "evidence": evidence_records},
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return
+    for line in format_change_summary(change):
+        typer.echo(line)
+    typer.echo("")
+    for line in format_impact(impact):
+        typer.echo(line)
+
+
+@app.command()
+def promote(
+    revision: str | None = typer.Option(
+        None, "--revision", help="Candidate deployment revision to promote."
+    ),
+    graph_path: Path | None = typer.Option(
+        None, "--graph", help="Bootstrap an initial revision from this graph."
+    ),
+    target: str = typer.Option("portable", "--target", help="Target for --graph bootstrap."),
+    evidence: list[Path] = typer.Option(
+        [], "--evidence", help="Candidate eval report used as promotion evidence (repeatable)."
+    ),
+    registry_dir: list[Path] = typer.Option([], "--registry", help="Model registry directory."),
+    store_path: Path | None = typer.Option(None, "--store", help="Revision store directory."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Validate evidence and show the switch without applying it."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable result."),
+) -> None:
+    """Atomically promote an evidence-gated revision, or bootstrap the first revision."""
+    if (revision is None) == (graph_path is None):
+        raise typer.BadParameter("pass exactly one of --revision or --graph")
+    try:
+        store = _revision_store(store_path)
+        if graph_path is not None:
+            bootstrap = bootstrap_revision(
+                store,
+                graph_path=graph_path,
+                target=target,
+                registry=_registry(registry_dir),
+                dry_run=dry_run,
+            )
+            if dry_run:
+                if as_json:
+                    typer.echo(json.dumps(bootstrap, indent=2, ensure_ascii=False))
+                else:
+                    typer.echo(f"dry run: would create and promote {bootstrap['revision_id']}")
+                return
+            revision_id = str(cast(dict[str, Any], bootstrap["revision"])["revision_id"])
+            plan = promotion_plan(store, revision_id, evidence_paths=evidence)
+            pointer = store.promote(
+                revision_id, reason="mg promote --graph", evidence=plan["evidence"]
+            )
+            payload = {
+                "dry_run": False,
+                "bootstrap": True,
+                "pointer": pointer,
+                "revision": plan["revision"],
+            }
+        else:
+            assert revision is not None
+            plan = promotion_plan(
+                store,
+                revision,
+                evidence_paths=evidence,
+                persist_evidence=not dry_run,
+            )
+            if dry_run:
+                payload = {
+                    "dry_run": True,
+                    "revision": plan["revision"],
+                    "change": plan.get("change"),
+                    "coverage": plan["coverage"],
+                    "would_promote": True,
+                }
+            else:
+                pointer = store.promote(revision, reason="mg promote", evidence=plan["evidence"])
+                mark_promoted(store, plan, reason="mg promote")
+                payload = {
+                    "dry_run": False,
+                    "pointer": pointer,
+                    "revision": plan["revision"],
+                    "change": plan.get("change"),
+                    "coverage": plan["coverage"],
+                }
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    if payload.get("dry_run"):
+        typer.echo(f"dry run: promotion of {payload['revision'].get('revision_id')} is allowed")
+        coverage = cast(dict[str, Any], payload.get("coverage") or {})
+        typer.echo(
+            f"evidence: satisfied={coverage.get('satisfied')} missing={coverage.get('missing')}"
+        )
+        return
+    pointer = cast(dict[str, Any], payload["pointer"])
+    typer.echo(f"active:   {pointer.get('revision_id')}")
+    typer.echo(f"previous: {pointer.get('previous_revision') or 'none'}")
+    typer.echo(f"target:   {pointer.get('target')}")
+
+
+@app.command()
+def rollback(
+    to: str = typer.Option(..., "--to", help="Retained revision to make active."),
+    store_path: Path | None = typer.Option(None, "--store", help="Revision store directory."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the pointer switch without applying it."
+    ),
+    reason: str = typer.Option("mg rollback", "--reason", help="Audit reason for the rollback."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable result."),
+) -> None:
+    """Point active back at a retained revision; no recompile is performed."""
+    try:
+        store = _revision_store(store_path)
+        revision = store.load_revision(to)
+        current = store.active_revision_id()
+        if current == to:
+            raise ChangeSetError(f"revision {to!r} is already active")
+        if dry_run:
+            payload = {
+                "dry_run": True,
+                "current": current,
+                "to": to,
+                "target": revision.get("target"),
+                "graph": revision.get("graph"),
+            }
+        else:
+            pointer = store.rollback(to, reason=reason)
+            payload = {"dry_run": False, "pointer": pointer}
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    if dry_run:
+        typer.echo(f"dry run: would switch active {current or 'none'} -> {to}")
+        typer.echo(
+            f"graph:   {revision.get('graph', {}).get('id')} target={revision.get('target')}"
+        )
+        return
+    pointer = cast(dict[str, Any], payload["pointer"])
+    typer.echo(f"active:   {pointer.get('revision_id')}")
+    typer.echo(f"previous: {pointer.get('previous_revision') or 'none'}")
+    typer.echo(f"target:   {pointer.get('target')}")
+
+
+@app.command()
+def status(
+    revisions: bool = typer.Option(
+        False, "--revisions", help="Include retained revisions and previous revisions."
+    ),
+    store_path: Path | None = typer.Option(None, "--store", help="Revision store directory."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable status."),
+) -> None:
+    """Show the active revision, open change sets, and revision retention."""
+    try:
+        store = _revision_store(store_path)
+        report = status_report(store, include_revisions=revisions)
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+        return
+    typer.echo(f"store:    {report['store']}")
+    if report.get("active_revision"):
+        graph = cast(dict[str, Any], report.get("graph") or {})
+        typer.echo(
+            f"active:   {report['active_revision']} ({graph.get('id')} target={report.get('target')})"
+        )
+        typer.echo(f"previous: {report.get('previous_revision') or 'none'}")
+    else:
+        typer.echo("active:   none (bootstrap with mg promote --graph <graph.yaml>)")
+    changes = cast(list[dict[str, Any]], report.get("changes") or [])
+    if changes:
+        typer.echo("changes:")
+        for change in changes:
+            typer.echo(
+                f"  {change.get('change_id')}  {str(change.get('status')):<12} "
+                f"{change.get('change_class')}  {change.get('candidate_revision')}"
+            )
+    else:
+        typer.echo("changes:  none")
+    typer.echo(f"students: {report.get('distilled_student_status')} (not tracked in v0)")
+    if revisions:
+        retained = cast(list[dict[str, Any]], report.get("revisions") or [])
+        typer.echo("revisions:")
+        if not retained:
+            typer.echo("  none")
+        for item in retained:
+            marker = "*" if item.get("active") else " "
+            typer.echo(
+                f" {marker}{item.get('revision_id')}  {str(item.get('target')):<9} "
+                f"age={item.get('age_days')}d  {item.get('graph')}  models={','.join(item.get('models') or [])}"
+            )
+        previous = cast(list[str], report.get("previous_revisions") or [])
+        if previous:
+            typer.echo("previous revisions: " + ", ".join(previous))
+    typer.echo(f"note:     {report.get('note')}")
 
 
 def _provider_factory(

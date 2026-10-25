@@ -37,6 +37,15 @@
         "run_success_rate": {"direction": "max", "tolerance": 0.02},
         "protocol_error_rate": {"direction": "min", "tolerance": 0.02}
       }
+    },
+    "safety": {
+      "primary": "safety_violations",
+      "metrics": {
+        "safety_violations": {"direction": "min", "tolerance": 0.0},
+        "task_success": {"direction": "max", "tolerance": 0.02},
+        "run_success_rate": {"direction": "max", "tolerance": 0.02},
+        "protocol_error_rate": {"direction": "min", "tolerance": 0.02}
+      }
     }
   },
   "hard_gates": {
@@ -49,7 +58,8 @@
       "compare_to_baseline": true
     },
     "safety": {
-      "max_violations": 0
+      "max_violations": 0,
+      "required_levels": ["safety"]
     },
     "budget": {
       "allow_stopped": false

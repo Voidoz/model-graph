@@ -117,6 +117,79 @@ Execution traces are the unique data asset of a graph system:
 - Traces must be redacted and consented before export. Local-only by default; export is an
   explicit command with a manifest.
 
+### 3.4 Dataset export
+
+`mg data export` turns recorded runs into a reviewed dataset. It is an explicit, local command:
+raw traces stay in the run directory, and nothing is uploaded. The export reads `run.json`,
+`trace.jsonl`, and `envelope.json`, reconstructs the exact rendered prompts through the
+runtime's own replay path, and writes a manifest next to the JSONL.
+
+```text
+uv run mg data export --run runs/<run-id> --out /tmp/dataset \
+  --consent "operator approved local training" \
+  --labels human-labels.json --checks node-checks.json \
+  --eval-suite evals/mock/js-specialist
+```
+
+**Consent.** Export fails closed unless consent is recorded with `--consent`. The statement and
+its scope go into the dataset manifest and every example. `--no-require-consent` is an explicit
+opt-out for synthetic/debug data; the manifest records `required: false, recorded: false`.
+Contribution terms remain an open question (`Q-010`), so an unknown dataset license stays
+non-distributable.
+
+**Selection.** Only runs whose outcome is `succeeded` are exported by default. Non-succeeded runs
+are skipped; `--include-failures` includes them and labels every example from them `failure` with
+`source: run_outcome`. A failure label is not inferred from a successful run: node labels default
+to `unknown`, and routing labels are unknown without an oracle/human route.
+
+**Examples.** A record is either `node` (worker/joiner rendered input, produced artifacts, finish
+reason, usage, error) or `routing` (rendered menu, chosen route, decision, confidence, threshold,
+outcome). Each record carries `source` (run, graph, node, trace event), `label`, `consent`,
+`license`, redaction pattern names, and input/output/example hashes. Records include a `split`
+field; `splits/{train,validation,test}.jsonl` are the same records partitioned.
+
+**Labels and checks.** `--labels` accepts a YAML/JSON mapping with a `labels` list (or a JSONL
+list). Entries may set `run_id`, `kind` (`node`/`routing`), `node`, `outcome`
+(`success`/`failure`/`unknown`), `route` (routing oracle, or `abstain`), `ambiguous`, `reason`,
+`labeler`, and `group`. `--checks` accepts a `CheckSpec`-style `checks` list per node and applies the
+existing evaluation checks to the trace's artifacts (`--allow-command-checks` is required to
+execute local command checks; rubric checks are skipped because export has no judge, and the
+reason records the skip).
+Explicit human labels take precedence over checks; a failed run takes precedence over both.
+
+**Redaction.** `--redact default` applies built-in secret/PII patterns (private keys, common API
+tokens, email, home paths); `--redact none` disables redaction; a YAML/JSON path supplies custom
+patterns, actions (`hash`, `mask`, `drop`), and optional field rules. Redaction runs on the whole
+record before hashes and dedupe. Artifact hashes are recomputed after redaction; when the content
+changes, the original hash is retained as `source_hash`. `redaction-report.json` lists each
+pattern's action, count, and field paths — never the matched text. A clean report is not proof
+that no secret exists.
+
+**Deduplication and splits.** Exact dedupe normalizes case and whitespace. Near-duplicate dedupe
+uses 64-bit SimHash over token shingles and a configurable Hamming-distance threshold
+(`--near-duplicate-distance`, default 3). Dedupe is global, so a near-duplicate cannot survive in
+both train and test. Splits are assigned by group (`--group-by source|graph|run|license`, or a
+label `group` override), never by row. The assignment is a deterministic hash of the group and
+`--split-seed`; `--split-plan FILE` persists and reuses assignments, keeping the test groups
+frozen across exports. Ratios default to 80/10/10 (`--split-ratio`).
+
+**Contamination.** `--eval-suite` (repeatable) checks example task text against each eval case,
+exact and near-duplicate. Matching examples are excluded and listed (suite, case id, method) in
+`eval_contamination`; without a suite the status is honestly `not-checked`.
+
+**Files and determinism.** The output contains `examples.jsonl`, `splits/{train,validation,test}.jsonl`,
+`dataset.json`, `redaction-report.json`, and `splits.json`. The documented schema is
+[`schemas/dataset.schema.json`](../schemas/dataset.schema.json): the top-level document is the
+`kind: Dataset` manifest, and each JSONL line validates against `$defs.example`
+(`modelgraph/dataset-example/v0`). The manifest records sources, per-source license and hashes,
+consent, filters, counts (including per-node and per-route), split assignments and hashes,
+preprocessing, contamination, and limitations. `by_node` groups examples by the node that
+produced them, including routing examples under their router; it is a source-node count, so its
+values can sum above the example total. `by_route` counts chosen routes and only covers routing
+examples. Given the same runs, options, and `created_at`,
+the JSONL, split files, redaction report, and manifest are byte-identical; only
+`metadata.created_at` is time-dependent.
+
 ## 4. Router training
 
 ### 4.1 Labels

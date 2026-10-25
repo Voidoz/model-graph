@@ -1,0 +1,18 @@
+# An air-gapped audit profile: nothing may use a network at all.
+#
+# The starter model manifests declare network_access: loopback because they call a local
+# Ollama server, so this profile prunes every node of every starter graph and the run fails
+# with MG-1005 before it reaches a provider. That is the correct result: v0 has no in-process
+# model adapter, and a loopback HTTP server is still network access. Use the profile to see
+# what a graph would need before you allow any socket; use local-8gb for an actual local run.
+name: no-network
+network: none
+gpu: true
+max_vram_gb: 8
+max_ram_gb: 32
+max_disk_gb: 50
+providers: [ollama, llamacpp, mock]
+licenses: [apache-2.0, mit]
+max_cost_usd: 0.0
+budget_overrides:
+  max_steps: 8

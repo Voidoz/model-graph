@@ -53,7 +53,7 @@ HTTP status codes: `200` success, `201` run created, `400` invalid request, `404
 ### `GET /api/health`
 
 ```json
-{"ok": true, "version": "0.3.0", "ui": "1"}
+{"ok": true, "version": "0.4.0", "ui": "1"}
 ```
 
 ### `GET /api/graphs`

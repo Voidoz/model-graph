@@ -371,3 +371,160 @@ modularizing and go back to a single prompt.
 
 The rule that ties them together: **the source graph is what you iterate; the deployment
 revision is what you run. A swap is a new revision with an impact report, not a mutation.**
+
+## 12. Implementation status (v0, T-0038)
+
+This section records what the repository actually implements today. It does not change the
+accepted semantics above; where v0 can only approximate a concept, the approximation is named.
+
+### 12.1 What is implemented
+
+- `src/modelgraph/revision.py` — change sets, graph diff, impact analysis, an immutable local
+  revision store, an atomic active pointer, promote/rollback, evidence coverage, and retention.
+- `schemas/change-set.schema.json` — the JSON contract for a persisted change set.
+- CLI: `mg graph diff`, `mg swap node`, `mg change create|list|show|explain`, `mg promote`,
+  `mg rollback`, and `mg status --revisions`.
+- Tests: `tests/iteration/test_revisions.py`, `tests/iteration/test_changesets.py`, and
+  `tests/iteration/test_cli_changesets.py`. They use the mock provider and never touch the
+  network.
+
+The store defaults to `.mg/revisions/` (git-ignored) and is overridable with `--store` or
+`MG_REVISION_STORE`:
+
+```text
+<store>/
+  active.json                    # atomic pointer: revision_id + previous_revision
+  events.jsonl                   # append-only promote/rollback/delete audit events
+  revisions/<rev_id>/
+    revision.json                # immutable revision manifest
+    graph.yaml                   # the exact top-level graph source
+    graphs/<subgraph>.graph.yaml # copied subgraph sources
+    models/<model-id>.yaml       # resolved model manifests
+    ir.json                      # canonical compiled IR
+  changes/<chg_id>/
+    change.json                  # status, bindings, evidence, promotion record
+    impact.json                  # the impact report the user reviewed
+```
+
+A revision id is the existing run-manifest identity:
+`deployment_revision(graph, target)`, a hash over the graph hash, resolved model hashes,
+target, renderer/parser, and compiler version. Consequently `runs/<run-id>/run.json` already
+records the same `deployment_revision` a revision would use. `mg run` additionally appends one
+`revision.pinned` event to `trace.jsonl`, so traces name the revision without changing the
+runtime trace schema or rewriting recorded provider events.
+
+### 12.2 Commands
+
+```text
+# Bootstrap the first deployment revision (no prior active revision).
+mg promote --graph graphs/coding-specialist.graph.yaml --store .mg/revisions
+
+# Propose a swap. This persists a candidate revision and change set; active is unchanged.
+mg swap node js-specialist --to js-specialist-3b@0.4.0 --store .mg/revisions \
+  --registry tests/iteration/fixtures/models
+
+mg change explain <change-id> --store .mg/revisions
+mg graph diff <base-rev> <candidate-rev> --store .mg/revisions
+mg change list --store .mg/revisions
+mg change show <change-id> --store .mg/revisions
+
+# Promotion requires evidence for the change class.
+mg promote --revision <candidate-rev> --store .mg/revisions \
+  --evidence runs/.../node/report.json \
+  --evidence runs/.../routing/report.json \
+  --evidence runs/.../e2e/report.json
+
+mg rollback --to <previous-rev> --store .mg/revisions
+mg status --revisions --store .mg/revisions
+```
+
+`mg swap ... --dry-run` compiles the candidate and prints the impact without writing a
+revision or change set. `mg promote --dry-run` validates evidence and compatibility without
+moving the pointer. `mg rollback --dry-run` shows the switch without moving it.
+
+The v0 registry allows one version per model id. To version-swap with `id@version`, pass the
+requested manifest path to `--to`, or pass an extra `--registry` directory containing that
+version. The revision module loads target manifests through the normal `ModelManifest`
+contract; it does not invent a version or mutate the active manifest.
+
+### 12.3 Change classes and required evidence
+
+The single mapping is `CHANGE_REQUIRED_EVIDENCE` / `required_evidence()` in
+`modelgraph.revision`; `mg change explain` and `mg promote` call the same function.
+
+| Change class | Required eval levels |
+| --- | --- |
+| `prompt` | node |
+| `adapter_swap` | node |
+| `model_swap` | node, e2e; routing too when a router menu/card/cost/latency changed |
+| `base_swap` | node, routing, e2e, safety |
+| `router_swap` | routing, e2e |
+| `topology` | e2e |
+| `target` | e2e, safety |
+| `student` | e2e, safety |
+| `initial` | none (explicit bootstrap only) |
+
+Evidence is a normal evaluation `report.json`, loaded through the existing eval-report
+contract and validated by `validate_report`. It counts only when all of the following hold:
+
+1. the report schema and required fields validate;
+2. its `graph.hash` (and graph id, when present) equals the candidate revision's graph;
+3. its gate passed; and
+4. it has at least one case result.
+
+The suite id, report id, content hash, gate result, and any validation errors are recorded in
+the change set. A report with a different graph hash, a failed gate, or no cases is listed as
+unsatisfied evidence, not silently ignored. This is evidence-gated promotion, not a fresh
+execution: the suites are run by `mg eval ...`; promotion does not re-run them.
+
+### 12.4 Compatibility derivation and its limit
+
+A model manifest in v0 has no dedicated `base_model` or `tokenizer` field. Impact analysis
+uses `metadata.labels.base_model` (or `base`) and `metadata.labels.tokenizer` when they are
+present. Otherwise it derives:
+
+- base identity from `spec.model` (for example `qwen2.5-coder:3b`);
+- tokenizer identity from the model family (`qwen2.5-coder`).
+
+The derived match is conservative but not proof. Two manifests that happen to share a family
+string are not guaranteed to share a tokenizer. Add the explicit labels before a shared
+deployment. For `fused`/`compiled`/`distilled` targets, a changed base or tokenizer blocks the
+change with an actionable migration message: use `--target portable` for a cold swap, or
+retrain/rebind adapters and rebuild the model family. A portable target records the change as
+a cold migration rather than pretending it is a hot swap.
+
+### 12.5 Invalidations in the portable target
+
+The portable target has no compiled plan, prefix cache, route cache, or distilled student.
+The impact report therefore marks those artifacts `not_applicable` (with the changed scope and
+a reason) instead of claiming an existing artifact was invalidated. For a `fused`, `compiled`,
+or `distilled` target, the same graph/model/prompt change reports the plan and prefix cache as
+`invalidated`, with `present: false`, because no plan is built in this ticket. Any source
+change marks a distilled student `stale` (ADR-0013); no student artifact is tracked yet. This
+is deliberately honest: a future compiled target must rebuild these artifacts, and no revision
+manifest fakes a plan or student hash.
+
+### 12.6 Atomicity, promotion, and rollback
+
+- A revision directory is built in a temporary sibling and renamed into place. It is immutable
+  after creation; the same inputs return the existing revision.
+- A swap or graph change writes only a candidate revision and change set. The active pointer is
+  untouched.
+- Promotion first validates compatibility and evidence, then writes `active.json` with
+  temp-file + `fsync` + `os.replace`, recording the previous revision. In-flight pinning and
+  hot swap remain out of scope (T-0039); the pointer is the only switch v0 implements.
+- A `fused`, `compiled`, or `distilled` revision records `plan_status: not_built`; it can be
+  described by impact analysis, but `mg promote` and `mg promote --graph` refuse to make it
+  active (`MG-6001`) because no such plan exists in v0. Those targets become promotable only
+  after a compiled-target ticket builds and records the plan.
+- Rollback is the same pointer write to a retained revision, with no recompile.
+- `events.jsonl` is append-only and records the pointer history.
+
+### 12.7 Retention (conservative Q-018 default)
+
+The default grace period is **7 days**. Deleting a revision is refused when it is active, when
+it is inside the grace period, or when an open (`draft`/`compiled`/`evaluated`/`promotable`)
+change set references it. `RevisionStore.gc(dry_run=True)` reports eligible and blocked
+revisions; the CLI does not delete automatically. This is the conservative default recorded
+for `Q-018`; reference-counted GC across eval reports and the rest of the artifact store remains
+a follow-up.

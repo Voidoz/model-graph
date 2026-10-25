@@ -1,0 +1,81 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: writing-studio
+  name: Writing Studio
+  version: 1.0.0
+  description: A writing and research assistant that routes creative work to a storyteller and explanatory work to a writing model. It never executes code.
+  labels:
+    domain: writing
+    difficulty: starter
+  authors:
+    - Model Graph contributors
+  license: TBD
+spec:
+  entry: brief-triage
+  inputs:
+    - name: task
+      type: text
+      required: true
+      description: The writing or research request.
+  exit: [answer]
+  fallback: draft
+  defaults:
+    max_steps: 6
+    max_depth: 2
+    max_cost_usd: 0.05
+    max_wall_seconds: 180
+    max_total_tokens: 24000
+  nodes:
+    - id: brief-triage
+      kind: router
+      description: Decides whether a request is creative writing or research and explanatory writing.
+      model: router-small
+      reads: [task]
+      routing:
+        confidence_threshold: 0.6
+        on_low_confidence: fallback
+        max_retries: 1
+    - id: draft
+      kind: worker
+      description: Writes short fiction, narrative, poetry, or marketing copy in the requested style.
+      model: story-7b
+      reads: [task]
+      instruction: |
+        You are a concise creative writer. Write the requested fiction, narrative, poem, or copy.
+        Do not explain your process. Put the final text in the artifact named "answer".
+      writes:
+        - name: answer
+          type: text
+          media_type: text/markdown
+    - id: research
+      kind: worker
+      description: Writes a structured research brief, comparison, or explanation with explicit uncertainty.
+      model: writer-7b
+      reads: [task]
+      instruction: |
+        You are a careful research writer. Produce a concise brief with a short answer first,
+        then the key points and the limits of what can be concluded from the request alone.
+        Do not invent sources, citations, or measurements. Do not execute code.
+        Put the final brief in the artifact named "answer".
+      writes:
+        - name: answer
+          type: text
+          media_type: text/markdown
+  edges:
+    - from: brief-triage
+      to: draft
+      when: The user asks for fiction, narrative, characters, poetry, a speech, or marketing copy.
+      examples:
+        - Write a two-line poem about rain.
+        - Tell me a story about a lighthouse keeper.
+      artifact: text
+      priority: 10
+    - from: brief-triage
+      to: research
+      when: The user asks for an explanation, summary, comparison, literature review, or research brief.
+      examples:
+        - Summarize the trade-offs between two database designs.
+        - Explain how a compiler optimizer works for a general audience.
+      artifact: text
+      priority: 0
