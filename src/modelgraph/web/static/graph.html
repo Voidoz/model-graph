@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Graph · Model Graph</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/common.js" defer></script>
+    <script src="/static/graph.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap" id="mg-nav"></div>
+    </header>
+    <main id="main" class="wrap page">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Dashboard</a>
+        <span aria-hidden="true">/</span>
+        <span id="graph-crumb">Graph</span>
+      </nav>
+
+      <div id="graph-status" class="mg-state" role="status" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Loading graph…</span>
+      </div>
+
+      <div id="graph-error" class="mg-error" role="alert" hidden></div>
+
+      <div id="graph-empty" class="mg-state" hidden>
+        <div>
+          <h2 class="state-title">No graph selected</h2>
+          <p class="state-message">
+            This page needs a graph id, for example
+            <span class="mono">graph.html?id=hello-triage</span>. Choose a graph from the
+            dashboard to inspect its topology.
+          </p>
+          <a class="button" href="index.html">Back to dashboard</a>
+        </div>
+      </div>
+
+      <div id="graph-content" hidden>
+        <section class="page-head" aria-labelledby="graph-title">
+          <div>
+            <p id="graph-id-version" class="eyebrow">Graph</p>
+            <h1 id="graph-title">Graph</h1>
+            <p id="graph-description" class="lede"></p>
+            <div id="graph-meta" class="graph-meta"></div>
+          </div>
+          <div class="page-actions">
+            <a id="graph-run-link" class="button" href="run.html">Run this graph</a>
+            <a class="button secondary" href="index.html">All graphs</a>
+          </div>
+        </section>
+
+        <div class="graph-layout">
+          <section class="card canvas-card" aria-labelledby="topology-title">
+            <div class="card-head">
+              <div>
+                <h2 id="topology-title">Topology</h2>
+                <p>
+                  Layered from the entry node. Select a node or an edge label to inspect it.
+                </p>
+              </div>
+            </div>
+            <div class="canvas-scroll">
+              <svg id="graph-canvas" role="img" aria-labelledby="graph-canvas-title"></svg>
+            </div>
+            <ul id="graph-legend" class="legend" aria-label="Node kind colors"></ul>
+          </section>
+
+          <aside class="card details-card" aria-labelledby="details-title">
+            <h2 id="details-title">Node details</h2>
+            <div id="node-details" aria-live="polite">
+              <p class="muted">Select a node in the graph to inspect its contract.</p>
+            </div>
+          </aside>
+        </div>
+
+        <section class="card warnings-card" aria-labelledby="warnings-title">
+          <div class="warnings-head">
+            <h2 id="warnings-title">Graph warnings</h2>
+            <span id="warning-count" class="badge">0</span>
+          </div>
+          <div id="graph-warnings"></div>
+        </section>
+      </div>
+    </main>
+    <footer class="site-footer wrap">
+      <p>
+        The graph is compiled locally from the default registry. Warnings come from the static
+        validator; they are advisory unless a run is rejected.
+      </p>
+    </footer>
+  </body>
+</html>

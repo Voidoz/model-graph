@@ -3,7 +3,7 @@ PYTEST ?= $(UV) run pytest
 RUFF ?= $(UV) run ruff
 MYPY ?= $(UV) run mypy
 
-.PHONY: sync format lint type test live-test check clean
+.PHONY: sync format lint type test live-test ui-check check clean
 
 sync:
 	$(UV) sync
@@ -24,6 +24,10 @@ test:
 
 live-test:
 	MG_TEST_OLLAMA=1 $(PYTEST) tests/live -q
+
+ui-check:
+	$(PYTEST) tests/web -q
+	$(UV) run python tests/web/smoke_ui.py
 
 check: lint type test
 

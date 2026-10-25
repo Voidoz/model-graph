@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Graphs · Model Graph</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/common.js" defer></script>
+    <script src="/static/index.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap" id="mg-nav"></div>
+    </header>
+    <main id="main" class="wrap page">
+      <section class="page-head" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">Local GUI</p>
+          <h1 id="page-title">Graphs</h1>
+          <p class="lede">
+            Compiled graphs from the default registry. Open a graph to inspect its nodes,
+            routing edges, model references, and compiler warnings.
+          </p>
+        </div>
+        <div class="page-actions">
+          <a class="button" href="run.html">New run</a>
+          <a class="button secondary" href="models.html">Models &amp; runs</a>
+        </div>
+      </section>
+
+      <p id="graphs-summary" class="summary-line" aria-live="polite" hidden></p>
+
+      <div id="graphs-status" class="mg-state" role="status" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Loading compiled graphs…</span>
+      </div>
+
+      <div id="graphs-error" class="mg-error" role="alert" hidden></div>
+
+      <div id="graphs-empty" class="mg-state" hidden>
+        <div>
+          <h2 class="state-title">No graphs in the registry</h2>
+          <p class="state-message">
+            The default registry returned no compiled graphs. Add a
+            <span class="mono">*.graph.yaml</span> file under
+            <span class="mono">examples/</span>, then validate it with
+            <span class="mono">mg validate</span> and refresh this page.
+          </p>
+          <a class="button secondary" href="index.html">Refresh dashboard</a>
+        </div>
+      </div>
+
+      <section id="graphs" class="graph-grid" aria-label="Graph catalog"></section>
+    </main>
+    <footer class="site-footer wrap">
+      <p>
+        Model Graph runs locally. This page reads the default registry through the local JSON
+        API; it makes no external requests.
+      </p>
+    </footer>
+  </body>
+</html>

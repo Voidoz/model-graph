@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Models and runs — Model Graph</title>
+    <meta
+      name="description"
+      content="Local model catalog and recorded run history for the Model Graph GUI."
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/models.css" />
+    <script src="/static/common.js" defer></script>
+    <script src="/static/models.js" defer></script>
+  </head>
+  <body class="models-page">
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <header class="site-header">
+      <div class="wrap" id="mg-nav"></div>
+    </header>
+    <main id="main" class="wrap page models-layout">
+      <header class="models-header">
+        <p class="models-eyebrow"><a href="index.html">Dashboard</a> / Models and runs</p>
+        <h1>Models &amp; run history</h1>
+        <p class="models-lede">
+          The local model registry says which models can back a graph. Run history is the audit
+          trail of what has actually executed on this machine, newest first.
+        </p>
+      </header>
+
+      <section class="models-section" id="models-section" aria-labelledby="models-heading">
+        <div class="models-section__head">
+          <div>
+            <h2 id="models-heading">Model catalog</h2>
+            <p class="models-section__hint">
+              Registry entries available to graphs. Licenses are shown as declared in the
+              manifest; verify upstream terms before redistribution.
+            </p>
+          </div>
+          <p class="models-status" id="models-status" role="status" aria-live="polite">
+            Loading models…
+          </p>
+        </div>
+
+        <div class="model-grid" id="models-list"></div>
+
+        <div class="models-state" id="models-empty" hidden>
+          <p class="models-state__title">No models in the local registry.</p>
+          <p class="models-state__detail">
+            Add a model manifest under <code>examples/models/</code>, then reload this page.
+            <a href="index.html">Browse graphs</a> while you wait.
+          </p>
+        </div>
+
+        <div class="models-error" id="models-error" role="alert" hidden></div>
+      </section>
+
+      <section class="models-section" id="history-section" aria-labelledby="history-heading">
+        <div class="models-section__head">
+          <div>
+            <h2 id="history-heading">Run history</h2>
+            <p class="models-section__hint">
+              The 50 most recent runs recorded in the local runs directory, ordered by start time.
+            </p>
+          </div>
+          <div class="history-tools">
+            <label class="history-filter" for="outcome-filter">
+              <span>Outcome</span>
+              <select id="outcome-filter" disabled>
+                <option value="all">All outcomes</option>
+              </select>
+            </label>
+            <button class="models-button" id="history-refresh" type="button">Refresh</button>
+            <p class="models-status" id="history-status" role="status" aria-live="polite">
+              Loading recent runs…
+            </p>
+          </div>
+        </div>
+
+        <div class="table-wrap" id="history-table-wrap" hidden>
+          <table class="history-table">
+            <caption class="visually-hidden">
+              Recent runs, newest first, with outcome, graph, token usage, cost, and start time
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Run</th>
+                <th scope="col">Outcome</th>
+                <th scope="col">Graph</th>
+                <th scope="col">Tokens</th>
+                <th scope="col">Cost</th>
+                <th scope="col">Started</th>
+              </tr>
+            </thead>
+            <tbody id="history-rows"></tbody>
+          </table>
+        </div>
+
+        <div class="models-state" id="history-empty" hidden></div>
+        <div class="models-error" id="history-error" role="alert" hidden></div>
+      </section>
+    </main>
+
+    <footer class="site-footer wrap models-footer">
+      <p>
+        Data comes from the local <code>mg ui</code> API only. Nothing is sent off this machine.
+      </p>
+    </footer>
+
+    <noscript>
+      <p class="models-noscript">
+        This page needs JavaScript to read the local API. The model manifests and run directories
+        are still available from the <code>mg</code> command line.
+      </p>
+    </noscript>
+  </body>
+</html>

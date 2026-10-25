@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -234,6 +235,48 @@ def replay(
             typer.echo(f"  - {mismatch}")
     if not result.ok:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def ui(
+    host: str = typer.Option("127.0.0.1", "--host", help="Loopback interface to bind."),
+    port: int = typer.Option(8765, "--port", help="Port to bind (0 picks a free port)."),
+    open_browser: bool = typer.Option(False, "--open", help="Open the GUI in the default browser."),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Never open a browser."),
+    runs_directory: Path = typer.Option(
+        default_runs_dir(), "--runs-dir", help="Directory for run artifacts."
+    ),
+) -> None:
+    """Serve the local GUI (loopback only)."""
+    from modelgraph.web import create_server, is_loopback_host
+
+    if not is_loopback_host(host):
+        typer.echo(f"refusing to bind {host!r}: mg ui is loopback-only", err=True)
+        raise typer.Exit(code=2)
+    if port < 0 or port > 65535:
+        typer.echo(f"invalid port {port}", err=True)
+        raise typer.Exit(code=2)
+    try:
+        server = create_server(host=host, port=port, runs_dir=runs_directory)
+    except OSError as exc:
+        typer.echo(f"cannot bind {host}:{port}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    bound = cast(tuple[Any, ...], server.server_address)
+    actual_host = str(bound[0])
+    actual_port = int(bound[1])
+    url_host = f"[{actual_host}]" if ":" in actual_host else actual_host
+    url = f"http://{url_host}:{actual_port}/"
+    typer.echo(f"Model Graph UI: {url}")
+    typer.echo(f"runs dir:        {runs_directory}")
+    if open_browser and not no_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("\nstopping...")
+    finally:
+        server.server_close()
 
 
 @trace_app.command("show")

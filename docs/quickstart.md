@@ -121,6 +121,32 @@ uv run mg run examples/composed-assistant.graph.yaml --provider mock
 This routes `domain-triage -> coding subgraph -> coding-triage -> js-specialist`. The inner
 graph's artifact is mapped to the outer `answer`; unmapped inner artifacts stay in the trace.
 
+## 8. Local GUI
+
+```text
+uv run mg ui
+```
+
+Open `http://127.0.0.1:8765/`. The GUI is served by Python's standard library, binds loopback
+only, and makes no external requests. Use `--port 0` to pick a free port (the chosen URL is
+printed), `--no-browser` to suppress the browser, or `--runs-dir PATH` to point run history at a
+different directory.
+
+The pages are:
+
+- **Dashboard** (`index.html`): compiled graphs with node/edge counts, warnings, and links.
+- **Graph** (`graph.html?id=<graph-id>`): a local SVG canvas, node/edge details, warnings, and a
+  link to run the graph.
+- **Run console** (`run.html`): run a task with the deterministic `mock` provider or `auto` (each
+  node's configured local provider), then inspect the routing path, artifacts, usage, trace, and
+  replay. `run.html?id=<run-id>` opens a recorded run from history.
+- **Models & runs** (`models.html`): the local model registry and recorded run history, newest
+  first.
+
+The mock provider is the quickest way to see the whole flow: it is offline, deterministic, and
+does not need Ollama. `auto` is the same provider choice `mg run` uses and needs the configured
+model server. See [gui.md](gui.md) for the JSON API and security contract.
+
 ## What the MVP includes
 
 - YAML/JSON loading with duplicate-key detection.
@@ -133,7 +159,8 @@ graph's artifact is mapped to the outer `answer`; unmapped inner artifacts stay 
 - Scoped views (a node sees only its declared reads).
 - Deterministic mock provider and OpenAI-compatible/Ollama HTTP adapters.
 - Content-addressed artifacts, trace, envelope, run manifest, and replay.
-- CLI commands: `validate`, `compile`, `run`, `replay`, `trace show`, `runs`, `models`.
+- CLI commands: `validate`, `compile`, `run`, `replay`, `trace show`, `runs`, `models`, `ui`.
+- A local GUI for graph inspection, mock runs, traces, artifacts, models, history, and replay.
 
 ## What is not in the MVP yet
 
@@ -143,7 +170,7 @@ graph's artifact is mapped to the outer `answer`; unmapped inner artifacts stay 
 - Adapter submission and distillation.
 - Bounded fan-out/ensemble joins.
 - Provider streaming and tools/code execution.
-- A visual inspector.
+- Graph editing and model-swap UX (`T-0046`).
 
 The next engineering milestones are the evaluation harness and the model-swap workflow. The
 performance track is Phase 5 and deliberately does not block the usable local workflow.

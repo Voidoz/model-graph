@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Run console · Model Graph</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/run.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap" id="mg-nav"></div>
+    </header>
+
+    <main id="main" class="wrap page run-page" tabindex="-1">
+      <header class="page-head">
+        <p class="eyebrow">Local GUI</p>
+        <h1>Run console</h1>
+        <p class="lede">
+          Run a compiled graph and inspect its routing path, artifacts, usage, and raw trace.
+          Runs execute on this machine; the page never calls an external service.
+        </p>
+      </header>
+
+      <section class="panel" aria-labelledby="run-heading">
+        <div class="panel-head">
+          <h2 id="run-heading">Run a graph</h2>
+        </div>
+        <form id="run-form" novalidate>
+          <fieldset id="run-fields">
+            <legend class="sr-only">Run inputs</legend>
+
+            <div class="field">
+              <label for="graph-select">Graph</label>
+              <select id="graph-select" name="graph_id" required disabled>
+                <option value="" selected>Loading graphs…</option>
+              </select>
+              <p id="graph-help" class="field-help">Loading compiled graphs from the local registry…</p>
+            </div>
+
+            <div class="field">
+              <label for="task-input">Task</label>
+              <textarea
+                id="task-input"
+                name="task"
+                rows="5"
+                required
+                spellcheck="true"
+                placeholder="Write a debounce function in TypeScript."
+              ></textarea>
+              <p class="field-help">
+                The task text is sent to every model node that receives it. It is never treated as
+                HTML.
+                <button id="example-task" class="link-button" type="button">Use the example task</button>
+              </p>
+            </div>
+
+            <div class="field">
+              <label for="provider-select">Provider</label>
+              <select id="provider-select" name="provider">
+                <option value="mock" selected>mock — deterministic, offline</option>
+                <option value="auto">auto — each node's local provider</option>
+              </select>
+              <p id="provider-help" class="field-help">
+                The mock provider is fast, offline, and deterministic. Use it to inspect the
+                console without a model server.
+              </p>
+            </div>
+          </fieldset>
+
+          <div class="run-actions">
+            <button id="run-button" class="button" type="submit" disabled>Run graph</button>
+            <span id="run-status" class="status" role="status" aria-live="polite"></span>
+          </div>
+          <p id="form-error" class="form-error" role="alert" hidden></p>
+        </form>
+      </section>
+
+      <section
+        id="error-panel"
+        class="panel error-panel"
+        aria-labelledby="error-heading"
+        tabindex="-1"
+        hidden
+      >
+        <div class="panel-head">
+          <h2 id="error-heading">Run failed</h2>
+          <span id="error-code" class="badge badge-bad">error</span>
+        </div>
+        <p id="error-context" class="muted"></p>
+        <p id="error-message" class="error-message"></p>
+        <p id="error-hint" class="field-help"></p>
+      </section>
+
+      <section
+        id="result-panel"
+        class="panel result-panel"
+        aria-labelledby="result-heading"
+        tabindex="-1"
+        hidden
+      >
+        <div class="panel-head">
+          <h2 id="result-heading">Run result</h2>
+          <span id="result-outcome" class="badge">unknown</span>
+        </div>
+
+        <p id="run-error" class="run-error" role="alert" hidden></p>
+
+        <dl class="summary-grid">
+          <div>
+            <dt>Run ID</dt>
+            <dd><code id="result-run-id">—</code></dd>
+          </div>
+          <div>
+            <dt>Graph</dt>
+            <dd id="result-graph">—</dd>
+          </div>
+          <div>
+            <dt>Task</dt>
+            <dd id="result-task">—</dd>
+          </div>
+          <div>
+            <dt>Provider</dt>
+            <dd id="result-provider">—</dd>
+          </div>
+          <div>
+            <dt>Run directory</dt>
+            <dd class="run-dir-cell">
+              <code id="result-run-dir">—</code>
+              <span class="inline-actions">
+                <a id="run-dir-link" class="text-link" href="/" hidden>Open folder</a>
+                <button id="copy-run-dir" class="button secondary small" type="button" hidden>
+                  Copy path
+                </button>
+              </span>
+            </dd>
+          </div>
+        </dl>
+
+        <p class="meta-links">
+          <a id="manifest-link" class="text-link" href="/" hidden>Run manifest (JSON)</a>
+          <a id="raw-trace-link" class="text-link" href="/" hidden>Raw trace (JSON)</a>
+          <a class="text-link" href="/models.html">Recent runs</a>
+        </p>
+
+        <h3>Usage</h3>
+        <dl id="usage-list" class="usage-grid"></dl>
+
+        <h3>Routing path</h3>
+        <ol id="path-timeline" class="timeline"></ol>
+
+        <h3>Exit artifacts</h3>
+        <div id="artifacts" class="artifact-list"></div>
+
+        <h3>Trace</h3>
+        <p id="trace-status" class="status" role="status" aria-live="polite"></p>
+        <p id="trace-note" class="field-help" hidden></p>
+        <div class="table-scroll">
+          <table id="trace-table" class="trace-table">
+            <caption class="sr-only">Raw trace events for this run</caption>
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Time</th>
+                <th scope="col">Event</th>
+                <th scope="col">Node</th>
+                <th scope="col">Details</th>
+              </tr>
+            </thead>
+            <tbody id="trace-body"></tbody>
+          </table>
+        </div>
+
+        <h3>Replay</h3>
+        <p class="field-help">
+          Replay re-executes the recorded run from its trace without calling a provider. If the
+          graph changed, the server refuses the replay instead of pretending it matches.
+        </p>
+        <div class="replay-actions">
+          <button id="replay-button" class="button secondary" type="button" disabled>
+            Replay this run
+          </button>
+          <span id="replay-status" class="status" role="status" aria-live="polite"></span>
+        </div>
+        <div id="replay-result" class="replay-result" hidden>
+          <p id="replay-verdict" class="replay-verdict"></p>
+          <p id="replay-detail"></p>
+          <p id="replay-meta" class="muted"></p>
+          <ul id="replay-mismatches" class="mismatch-list" hidden></ul>
+        </div>
+      </section>
+
+      <noscript>
+        <p class="panel">This page needs JavaScript enabled to run a graph.</p>
+      </noscript>
+    </main>
+
+    <footer class="site-footer wrap">
+      <p>Model Graph runs locally. No telemetry and no external assets.</p>
+    </footer>
+
+    <script src="/static/common.js" defer></script>
+    <script src="/static/run.js" defer></script>
+  </body>
+</html>

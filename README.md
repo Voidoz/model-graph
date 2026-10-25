@@ -9,12 +9,14 @@ which expert should see the request, the expert answers, and the graph returns t
 result. Experts can be trained by different people on ordinary hardware, versioned
 independently, and pruned when a deployment does not need them.
 
-> **Status: MVP 0.1.1 (live-validated on CPU and Vulkan GPU).** The repository now has a runnable vertical slice: schema and
-> semantic validation, router/worker/joiner/subgraph execution, deterministic mock and local
-> HTTP providers, hard budgets, traces, run manifests, and offline replay. Evaluation,
-> compiled targets, canaries, and model-swap promotion are the next tracks. Live local-model
-> validation passed on CPU and on an RTX 3080 via Ollama Vulkan. See
-> [docs/quickstart.md](docs/quickstart.md) and [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md).
+> **Status: v0.2.0 — GUI MVP, live-validated on CPU and Vulkan GPU.** The repository has a
+> runnable vertical slice — schema and semantic validation, router/worker/joiner/subgraph
+> execution, deterministic mock and local HTTP providers, hard budgets, traces, run manifests,
+> and offline replay — plus a loopback-only `mg ui` GUI for graph inspection, mock runs,
+> traces, artifacts, models, history, and replay. Evaluation, compiled targets, canaries, and
+> model-swap promotion are the next tracks. Live local-model validation passed on CPU and on an
+> RTX 3080 via Ollama Vulkan. See [docs/quickstart.md](docs/quickstart.md) and
+> [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md).
 
 ## The idea in one picture
 
@@ -78,6 +80,22 @@ uv run mg run examples/composed-assistant.graph.yaml --provider mock
 See [docs/quickstart.md](docs/quickstart.md) for the full walkthrough and the current MVP
 scope.
 
+## Local GUI
+
+`mg ui` serves a zero-build, loopback-only web app from Python's standard library. It inspects
+compiled graphs, runs the deterministic mock provider, shows traces/artifacts/usage, browses
+models and run history, and replays recorded runs. No CDN, telemetry, auth, or Node build step.
+
+```text
+uv run mg ui
+# Model Graph UI: http://127.0.0.1:8765/
+```
+
+Use `--port 0` for a free port, `--no-browser` to suppress the browser, and `--runs-dir PATH` to
+point history at another directory. The run console's `mock` provider works offline; `auto`
+uses each node's configured local provider. See [docs/gui.md](docs/gui.md) for the API,
+page requirements, and security model.
+
 ## Design principles
 
 1. **Language is the wire.** Any model that can chat can join the graph. No shared
@@ -114,6 +132,7 @@ scope.
 | [`docs/gpu-execution.md`](docs/gpu-execution.md) | GPU-resident and fused same-base backends, overhead accounting, limits |
 | [`docs/performance.md`](docs/performance.md) | LLM-parity analysis, options compared, overhead budget, compilation targets |
 | [`docs/iteration.md`](docs/iteration.md) | Iteration loops, swap impact, atomic revisions, canary/rollback |
+| [`docs/gui.md`](docs/gui.md) | Local GUI architecture, JSON API, page contract, security |
 | [`docs/training.md`](docs/training.md) | Independent specialist and router training, data flywheel |
 | [`docs/evaluation.md`](docs/evaluation.md) | Metrics, suites, baselines, contribution gates |
 | [`docs/roadmap.md`](docs/roadmap.md) | Phases, milestones, sequencing, risk register summary |
