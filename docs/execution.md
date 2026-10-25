@@ -169,8 +169,8 @@ not branch on backend mode; only the executors' call target changes.
 | Artifacts | Run | Content-addressed blobs | Append-only |
 | Budget | Run | Snapshot per event | Shared with subgraphs |
 | Path/frames | Run | Trace events | Ordered |
-| Trace | Run | `trace.jsonl` | Append-only |
-| Cache | Cross-run | `cache/` | Keyed by content hashes |
+| Trace | Run | `trace.jsonl` | Append-only; redacted on write |
+| Cache | Cross-run | `cache/responses/` | Exact-match; keyed by content hashes; no TTL |
 | Model manifests | Cross-run | Registry | Immutable per version |
 
 There is no global mutable state across runs. Two runs can execute concurrently in one
@@ -206,6 +206,15 @@ Rules:
 6. **Wall-clock checks are cooperative.** A long provider call cannot be interrupted if
    the adapter does not support cancellation; the budget is checked immediately after and
    the run fails. Adapters should honor timeouts.
+7. **Retries and repairs are bounded.** A retryable transport failure gets at most two
+   retries (three attempts). Invalid router decisions and malformed artifacts get one repair
+   attempt. A router's configured `max_retries` bounds low-confidence re-prompts, and an
+   executor has a defense-in-depth cap of eight provider calls per node. A retry is charged
+   to the shared budget; it does not reset it.
+8. **Profile overrides cannot break the ceiling.** Overrides tighten by default. Even with
+   `--allow-budget-override`, a profile cannot raise a run above the schema-aligned hard
+   maxima for steps (64), depth (8), total tokens (10,000,000), or wall seconds (86,400).
+   See [security.md](security.md#24-budget-and-denial-of-service-abuse).
 
 ### 4.1 Budget math
 
@@ -251,6 +260,9 @@ Determinism is a spectrum. The runtime is explicit about what it can guarantee.
   measure provider drift. The report compares outputs and usage rather than claiming
   equality.
 
+A cache hit emits a normal `provider.response` event, so trace replay of a cached run works
+without the cache or a network. See [§7](#7-caching).
+
 A **run manifest** records everything needed to distinguish these, including the
 immutable deployment revision that served the request:
 
@@ -263,7 +275,7 @@ immutable deployment revision that served the request:
   "outcome": "succeeded",
   "graph": {"id": "composed-assistant", "version": "1.0.0", "hash": "sha256:...", "source": "examples/composed-assistant.graph.yaml"},
   "ir_version": "modelgraph/ir/v0",
-  "renderer_version": "2",
+  "renderer_version": "3",
   "parser_version": "2",
   "models": [
     {"node": "domain-triage", "ref": "router-small", "version": "1.0.0", "hash": "sha256:...", "provider": "ollama", "model": "qwen2.5:1.5b-instruct", "resolved_revision": null, "revision_reason": "model manifest does not pin spec.integrity.revision"}
@@ -274,7 +286,7 @@ immutable deployment revision that served the request:
   "prune_hash": "sha256:...",
   "budget": {"max_steps": 8, "max_depth": 3, "max_total_tokens": 32000, "max_cost_usd": 0.05},
   "seed": 42,
-  "environment": {"python_version": "3.12.6", "platform": "Linux-...", "providers": [{"name": "ollama", "version": "0.4.0"}], "hostname": "workstation", "pid": 4242},
+  "environment": {"python_version": "3.12.6", "platform": "Linux-...", "providers": [{"name": "ollama", "version": "0.5.0"}], "hostname": "workstation", "pid": 4242},
   "started_at": "2026-10-22T10:00:00Z",
   "finished_at": "2026-10-22T10:00:07Z",
   "usage": {"steps": 3, "input_tokens": 2011, "output_tokens": 842, "total_tokens": 2853, "cost_usd": 0.0},
@@ -308,7 +320,9 @@ The manifest pins:
 - the effective profile and prune report, with canonical hashes when present;
 - budget, seed, usage, and environment (Python, platform, CPU/memory, provider adapter
   versions, hostname, and PID);
-- outcome, error, artifacts, exit artifact hashes, and the trace path;
+- outcome, error, artifacts, exit artifact hashes, and the trace path. `request.task`,
+  router `path[].reason`, and the `error` payload are redacted before the manifest is
+  written; the redaction report contains pattern names, counts, and hashes only;
 - `parent_run_id` and a `subgraphs` index. A subgraph invocation also writes its own final
   manifest at `runs/<run-id>/subgraphs/<child-run-id>/run.json` with `parent_run_id` set and
   the parent's trace at `../../trace.jsonl`.
@@ -417,29 +431,128 @@ plan.
 ## 7. Caching
 
 v0 supports **exact-match response caching** only. Semantic caching is deferred because it
-can silently change behavior and is hard to evaluate.
+can silently change behavior and is hard to evaluate (backlog B-01). There is no TTL, no
+shared/remote cache, and invalidation is by key only.
 
-Cache key:
+### 7.1 Cache key
 
 ```text
 sha256(
-  node_id + graph_hash + renderer_version
-  + model_manifest_hash + resolved_model_revision
-  + canonical_messages + generation_params + seed
+  canonical_json({
+    node_id, graph_hash, renderer_version,
+    model_manifest_hash, resolved_model_revision, model_manifest_version,
+    effective_provider, model_id,
+    canonical_messages, generation_params, seed
+  })
 )
 ```
 
-Rules:
+- `generation_params` is `temperature`, `max_output_tokens`, `json_mode`, `stop`, and
+  `seed`. `timeout_seconds` is not part of the key because it cannot change the generated
+  content.
+- `effective_provider` is the adapter that actually served the call (`mock`, `ollama`, …),
+  not only the provider named in the manifest. Running the same graph with `--provider mock`
+  and `--provider ollama` must not share responses.
+- `graph_hash` scopes every node, including subgraph nodes; there is no cross-graph hit.
+- Canonical JSON and SHA-256 are used. Python's process-randomized `hash()` is never used.
+- There is no profile field: the model manifest hash, resolved revision, and effective
+  provider already distinguish a local response from a hosted one.
 
-- Cache entries store the response text and normalized usage, not the envelope.
-- A hit is recorded as `provider.response.cached` and charges zero cost, but the original
-  token usage is displayed in the report as avoided cost.
-- Cache is scoped by profile? No: the key already includes the model hash and messages.
-  A local profile cannot accidentally hit a hosted response because the manifest hash
-  differs.
-- Secrets and user-identifying content must not be written to a shared cache. The default
-  cache is per-user and local. A run may set `cache: off`.
-- Cache invalidation is by key, not time. There is no TTL in v0.
+### 7.2 Modes and CLI
+
+| Mode | Reads | Writes | Typical use |
+| --- | --- | --- | --- |
+| `on` | yes | yes | Default for `mg run` |
+| `readonly` | yes | no | Reproduce from a populated local cache without growing it |
+| `off` | no | no | Hermetic tests, evaluation, or deliberate cold runs |
+
+```text
+uv run mg run examples/hello-triage.graph.yaml --provider mock
+uv run mg run examples/hello-triage.graph.yaml --provider mock --no-cache
+uv run mg run examples/hello-triage.graph.yaml --provider mock --cache-mode readonly
+uv run mg run examples/hello-triage.graph.yaml --provider mock --cache-dir .cache/responses
+```
+
+- `mg run` defaults to `on`. `--no-cache` is shorthand for `--cache-mode off`; it bypasses
+  both reads and writes. `--cache-dir PATH` sets the location; the default is
+  `cache/responses/` under the working directory and can be overridden with `MG_CACHE_DIR`.
+- The **library** default is off. `run_graph(..., cache=ResponseCache(...))` must be
+  explicit, so tests, evaluation suites, and other callers stay hermetic and reproducible
+  by default.
+- `readonly` reads are safe on a cache populated by another run. A miss is not written; it
+  is recorded as a miss and the provider is called normally.
+- The cache is local and per-user. It is not a shared service; a future shared cache needs a
+  privacy design. `cache/` is git-ignored and can be deleted at any time.
+
+### 7.3 Storage and atomicity
+
+One JSON file per key under `<cache-dir>/<sha256>.json`. An entry contains:
+
+- the response text, normalized usage (`input_tokens`, `output_tokens`,
+  `approximated`), `finish_reason`, and provider metadata;
+- `created_at` and the cache-key metadata (node/graph/renderer/model hashes, resolved
+  revision and version, effective provider, model id, generation params, and a
+  `messages_hash`).
+
+Entries **never** contain request messages, prompts, envelopes, artifacts, or credentials.
+The prompt is represented only by a hash.
+
+- Writes use a uniquely named temporary file in the cache directory, `fsync`, and
+  `os.replace`. A concurrent reader sees the previous complete entry or the new complete
+  entry, never a half-written file.
+- A corrupt, truncated, or partial entry is ignored on read. When writes are allowed it is
+  removed and the next successful response atomically rewrites the key; in `readonly` it is
+  ignored and left alone. A cache problem never fails a run.
+- A miss writes only after the provider returns a response that the budget accepted.
+  Provider failures and budget-exhausted calls leave no entry.
+- The cache is inspectable plain JSON. Treat it as sensitive local data: response text can
+  contain user content, and there is no encryption at rest.
+
+### 7.4 Hits, budget, and trace
+
+A hit is resolved in `Executor.call` **before** the provider is called:
+
+- It consumes zero tokens and zero cost and is not charged to the budget. The run report
+  shows avoided usage separately: `cache.hits`, `cache.misses`, `cache.writes`,
+  `cache.skipped`, `cache.avoided_tokens`, and `cache.avoided_cost_usd` (in `mg run --json`
+  and the human run summary).
+- Step and wall-clock budgets still apply to the node. Token/cost pre-flight checks do not
+  veto a hit because it consumes neither.
+- The trace emits `provider.response` with the cached `text` and `cached: true` so trace
+  replay works, plus a distinct `provider.response.cached` event carrying the original usage
+  and avoided tokens/cost. A `cache.miss` event marks an enabled miss. A paired hit is
+  counted once by `mg stats`; both events share a `cache_hit_id`.
+- No `budget.charged` event is emitted for a hit. A cache hit does not reset or increase
+  budget usage.
+
+### 7.5 Privacy, redaction, and replay
+
+- A response that matches any default secret/PII pattern is **not cached**. The runtime
+  records `cache.skipped` with `reason: default-secret-pattern` and pattern names only
+  (never the matched text), and the next identical request misses. Redacting only the cache
+  metadata was rejected: the response body is the sensitive part. API keys are never written
+  to the cache.
+- Persistence redaction still applies to the trace, envelope, and manifest. A cached hit
+  still goes through the normal trace writer, so a run that contains a secret-shaped prompt
+  or response is redacted exactly like an uncached run.
+- Trace replay works for cached runs because the hit emits a normal `provider.response`
+  with the response text. A redacted trace can still break replay (the T-0029 trade-off);
+  skipping secret-shaped responses from the cache means the cache itself does not introduce
+  a second replay failure.
+- The cache is not rewritten by redaction, and it is not scanned by
+  `scripts/scan_secrets.py` by default. Delete it, or point `--cache-dir` at a scratch
+  directory, when response text must not persist.
+- Cache files are trusted local data. Anyone who can write the cache directory can change a
+  cached response, so protect the directory with filesystem permissions; entries are created
+  mode `0600` by the atomic writer.
+
+### 7.6 Scope
+
+- No semantic/embedding caching, no cross-graph reuse, no shared or remote backend, and no
+  TTL in v0.
+- Caching routing decisions separately from provider responses is out of scope; a router
+  response is cached like any other provider response.
+- Evaluation and the baseline gates leave the cache off so baselines remain reproducible.
 
 ## 8. Concurrency and streaming
 
@@ -468,11 +581,15 @@ Event types:
 | `run.started` | run id, graph hash, profile, budget, seed |
 | `node.entered` | node, kind, depth, step, path length |
 | `render.completed` | prompt hash, message hashes, token estimate, truncated artifacts |
+| `render.truncated` | one event per capped untrusted block: kind, name, limit, bytes omitted |
 | `backend.plan` | mode, resolved models/adapters, VRAM estimate, admission result, fallback |
 | `backend.loaded` | cold load ms, resident models, VRAM reserved |
 | `backend.transition` | from/to node, host parse ms, tokenize ms, transfer ms, adapter switch ms, prefill ms |
 | `provider.request` | provider, model, params hash, attempt |
-| `provider.response` | usage, latency, finish reason, cached, provider meta |
+| `provider.response` | usage, latency, finish reason, cached, provider meta; text for replay |
+| `provider.response.cached` | original usage, avoided tokens/cost, cache hit id |
+| `cache.miss` | node, cache key, mode, whether a write was allowed |
+| `cache.skipped` | node, reason (`default-secret-pattern` or `write-failed`), pattern names |
 | `decision.made` | decision, target, confidence, reason, threshold, tie-break |
 | `artifact.written` | name, type, hash, producer, bytes |
 | `budget.charged` | tokens, cost, elapsed, remaining |
@@ -485,12 +602,20 @@ Rules:
 - Events are timestamped with a monotonic clock and a wall-clock timestamp.
 - Content is referenced by hash; full prompts may be stored separately under `prompts/`
   when `--save-prompts` is enabled, subject to redaction.
-- The trace never contains API keys or unredacted secrets.
+- The trace never contains API keys or unredacted secrets. Persistence applies the default
+  secret/PII pattern set to each event before writing the JSONL; in-memory events are left
+  intact for the producing run. A `redaction.json` sidecar records pattern names, counts,
+  field paths, and truncated hashes (never matched text) when persistence redacted
+  something. Artifact blobs under `artifacts/` are content-addressed run data and are not
+  rewritten; treat a run directory as sensitive.
 - Backend transition metrics are recorded per hop; prefill is a separate field from host
   marshaling so the report does not blame transport for model compute.
 - Logging is structured; human-readable logs are a rendering of events, not a second
   source of truth.
-- OpenTelemetry export is a later integration ([T-0030](../.scratch/tickets/T-0030-observability.md)).
+- OpenTelemetry export is optional and off by default; the core runs without the dependency
+  ([T-0030](../.scratch/tickets/T-0030-observability.md)).
+- Operational details — JSONL logs, trace-to-metric projection, `mg stats`, and the optional
+  span exporter — are in [observability.md](observability.md).
 
 ## 10. Failure semantics
 

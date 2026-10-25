@@ -53,7 +53,15 @@ is the coding branch for this example. The output includes:
 - the routing path;
 - the final artifact;
 - token usage and cost;
+- cache hits/misses and avoided tokens/cost;
 - the run directory.
+
+`mg run` enables the exact-match response cache by default (`cache/responses/`, overridable
+with `--cache-dir` or `MG_CACHE_DIR`). Repeating the same graph, prompt, model, parameters,
+and seed hits the cache and shows avoided tokens/cost instead of charging the budget. Use
+`--no-cache` (or `--cache-mode off`) for a cold run, or `--cache-mode readonly` to read a
+populated cache without writing. See [execution.md §7](execution.md#7-caching) for the key,
+privacy behavior, and replay trade-offs.
 
 The run directory contains:
 
@@ -200,10 +208,15 @@ works offline; without the profile, `auto`/`ollama` uses the configured local mo
 - Deterministic mock provider and OpenAI-compatible/Ollama HTTP adapters.
 - Content-addressed artifacts, trace, envelope, run manifest, and replay.
 - CLI commands: `validate`, `compile`, `run`, `replay`, `trace show`, `runs`, `models`, `ui`,
-  `eval`, `data export`, `status`, `graph diff`, `swap`, `change`, `promote`, and `rollback`.
+  `eval`, `data export`, `status`, `graph diff`, `swap`, `change`, `promote`, `rollback`, and
+  `stats`.
 - Node/routing/e2e evaluation, safety gates, baselines, and offline contribution checks.
 - Change sets, impact analysis, immutable revisions, atomic promotion, and rollback.
 - Consented, redacted trace-to-dataset export with frozen grouped splits.
+- Exact-match response cache (`on|off|readonly`, `--no-cache`) with avoided-cost reporting.
+- Structured JSONL/console logs, trace-derived metrics, and optional OpenTelemetry spans.
+- Renderer untrusted-content labeling/neutralization, size caps, persistence redaction,
+  manifest trust checks, secret scanning, and a dependency-audit CI job.
 - A local GUI for graph inspection, mock runs, traces, artifacts, models, history, and replay.
 - A tested starter library and tutorial.
 

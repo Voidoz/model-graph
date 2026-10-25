@@ -21,6 +21,17 @@ uv run mg version
 make format      # write formatting and safe lint fixes
 make check       # format check + ruff + mypy + pytest
 make eval-gates  # offline mock eval suites + contribution gates
+make audit       # network: pip-audit the locked runtime dependencies
+```
+
+`make check` is offline and deterministic; `make audit` is deliberately separate because it
+downloads `pip-audit` and advisory data. It never runs as part of `check`. The failure policy
+and waiver rule are in [security.md](security.md#3-failure-policy-for-dependency-audit).
+Security tests and the run-directory scanner:
+
+```text
+uv run pytest tests/security -q
+uv run python scripts/scan_secrets.py runs/
 ```
 
 `make eval-gates` regenerates the node, routing, and e2e mock candidate reports under
@@ -149,7 +160,8 @@ See the ticket board in `.scratch/tickets/BOARD.md` for what exists today.
 `.github/workflows/ci.yml` runs `uv sync --locked`, `make check`, and the offline
 `make eval-gates` comparison on Python 3.12 for pushes to `main` and pull requests. The gate
 job writes the comparison Markdown to the job summary and uploads `runs/evals/ci/` as an
-artifact. A real-model job is scheduled/manual only and is skipped unless the repository
-variable `MG_LIVE_RUNNER` names a self-hosted runner; it runs `make nightly` and uploads
-`runs/evals/nightly/`. Default CI does not contact a model server. A change that only passes
-locally is not done.
+artifact. The separate `dependency-audit` job runs `make audit` (network) and is a merge
+blocker; see [security.md](security.md#3-failure-policy-for-dependency-audit). A real-model
+job is scheduled/manual only and is skipped unless the repository variable `MG_LIVE_RUNNER`
+names a self-hosted runner; it runs `make nightly` and uploads `runs/evals/nightly/`. Default
+tests do not contact a model server. A change that only passes locally is not done.

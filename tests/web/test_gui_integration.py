@@ -212,7 +212,7 @@ def test_health_and_catalog_contract(gui: ModelGraphHTTPServer) -> None:
     status, headers, data = _request(gui, "GET", "/api/health")
     assert status == 200
     assert headers["content-type"].startswith("application/json")
-    assert _json(data) == {"ok": True, "version": "0.4.0", "ui": "1"}
+    assert _json(data) == {"ok": True, "version": "0.5.0", "ui": "1"}
 
     status, _, data = _request(gui, "GET", "/api/graphs")
     assert status == 200

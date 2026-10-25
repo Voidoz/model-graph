@@ -9,16 +9,17 @@ which expert should see the request, the expert answers, and the graph returns t
 result. Experts can be trained by different people on ordinary hardware, versioned
 independently, and pruned when a deployment does not need them.
 
-> **Status: v0.4.0 — measured, revisioned graph runtime.** The repository has a
+> **Status: v0.5.0 — hardened, observable graph runtime.** The repository has a
 > runnable vertical slice — schema and semantic validation, router/worker/joiner/subgraph
 > execution, deterministic mock and local HTTP providers, hard budgets, traces, run manifests,
 > and offline replay — plus a loopback-only `mg ui` GUI for graph inspection, mock runs,
 > traces, artifacts, models, history, and replay. The measurement layer includes node, routing,
 > end-to-end, and safety gates; model changes go through impact analysis and immutable revisions
-> with atomic promotion and rollback. Trace-to-dataset export and a tested starter library are
-> in place. Resident/compiled targets and canaries are the next tracks. Live local-model
-> validation passed on CPU and on an RTX 3080 via Ollama Vulkan. Start with
-> [docs/tutorial.md](docs/tutorial.md) for the guided path,
+> with atomic promotion and rollback. Trace-to-dataset export, a tested starter library, an
+> exact-match response cache, structured logs/metrics, and a security threat model are in place.
+> Resident/compiled targets and canaries are the next tracks. Live local-model validation passed
+> on CPU and on an RTX 3080 via Ollama Vulkan, including a composed run with 4GB pruning. Start
+> with [docs/tutorial.md](docs/tutorial.md) for the guided path,
 > [docs/quickstart.md](docs/quickstart.md) for the command reference, and
 > [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) for what comes next.
 
@@ -142,6 +143,26 @@ uv run mg data export --run runs/<run-id> --out /tmp/dataset \
 
 See [docs/iteration.md](docs/iteration.md) and [docs/training.md](docs/training.md).
 
+## Operations and safety
+
+Repeated provider calls hit a local exact-match cache by default; `--no-cache` bypasses it and
+`--cache-mode readonly` serves existing entries without writing. Cache hits consume zero tokens
+and report avoided usage separately.
+
+```text
+uv run mg stats --last 5
+MG_LOG_FORMAT=json MG_LOG_FILE=runs/run.jsonl uv run mg run graphs/hello-triage.graph.yaml
+make audit
+```
+
+Structured logs and optional OpenTelemetry spans carry identifiers and timings, not prompts or
+artifacts. The renderer labels untrusted content, neutralizes protocol markers, and caps oversized
+inputs; persisted traces, envelopes, and errors are redacted. `make audit` is network-dependent
+and separate from the offline gate. See [docs/security.md](docs/security.md) and
+[docs/observability.md](docs/observability.md) for the threat model, limitations, and export
+controls. Redaction can break replay and does not rewrite artifact blobs; do not treat delimiters
+as injection immunity.
+
 ## Design principles
 
 1. **Language is the wire.** Any model that can chat can join the graph. No shared
@@ -176,6 +197,8 @@ See [docs/iteration.md](docs/iteration.md) and [docs/training.md](docs/training.
 | [`docs/graph-model.md`](docs/graph-model.md) | Node kinds, edges, artifact types, YAML anatomy, validation rules |
 | [`docs/protocol.md`](docs/protocol.md) | Envelope, renderers, router decisions, error model |
 | [`docs/execution.md`](docs/execution.md) | Scheduler, budgets, pruning, caching, replay, observability |
+| [`docs/security.md`](docs/security.md) | Threat model, untrusted input, redaction, trust policy, release checklist |
+| [`docs/observability.md`](docs/observability.md) | Structured logs, trace-derived metrics, `mg stats`, optional spans |
 | [`docs/gpu-execution.md`](docs/gpu-execution.md) | GPU-resident and fused same-base backends, overhead accounting, limits |
 | [`docs/performance.md`](docs/performance.md) | LLM-parity analysis, options compared, overhead budget, compilation targets |
 | [`docs/iteration.md`](docs/iteration.md) | Iteration loops, swap impact, atomic revisions, canary/rollback |
@@ -204,8 +227,9 @@ See [docs/iteration.md](docs/iteration.md) and [docs/training.md](docs/training.
 5. [`docs/gpu-execution.md`](docs/gpu-execution.md) — how a graph can run GPU-resident, and what that cannot fix.
 6. [`docs/performance.md`](docs/performance.md) — how the graph compares to an LLM, what to compile, and what parity requires.
 7. [`docs/iteration.md`](docs/iteration.md) — how a user swaps models safely while building a workflow.
-8. [`docs/training.md`](docs/training.md) and [`docs/evaluation.md`](docs/evaluation.md) — how nodes improve.
-9. [`docs/roadmap.md`](docs/roadmap.md) and [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) — what to build next.
+8. [`docs/security.md`](docs/security.md) and [`docs/observability.md`](docs/observability.md) — what is untrusted, what is persisted, and what is exported.
+9. [`docs/training.md`](docs/training.md) and [`docs/evaluation.md`](docs/evaluation.md) — how nodes improve.
+10. [`docs/roadmap.md`](docs/roadmap.md) and [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) — what to build next.
 
 ## Working in the repository
 

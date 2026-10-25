@@ -19,9 +19,27 @@ from modelgraph.providers.base import (
     Usage,
 )
 from modelgraph.runtime.budget import Budget
+from modelgraph.runtime.cache import (
+    CacheEntry,
+    CacheKey,
+    CacheStats,
+    ResponseCache,
+    build_cache_key,
+    response_has_default_secret,
+)
 from modelgraph.runtime.envelope import RuntimeState
 from modelgraph.runtime.renderer import RenderedPrompt, render_prompt
 from modelgraph.runtime.trace import TraceRecorder
+from modelgraph.util import new_id, utc_now
+
+#: Two retries for a retryable transport failure (three attempts total). This is a hard
+#: ceiling independent of a node's routing configuration.
+MAX_PROVIDER_ATTEMPTS = 3
+
+#: Defense-in-depth cap on total provider calls for one node, including repair and
+#: low-confidence retry calls. The graph schema bounds ``routing.max_retries``; this catches a
+#: future code path that forgets to respect it.
+MAX_CALLS_PER_NODE = 8
 
 _ARTIFACT_BLOCK = re.compile(
     r'<<<MG:artifact name="([a-z][a-z0-9_]*)" type="(text|code|patch|plan|json|report)">>>\n'
@@ -58,12 +76,17 @@ class Executor:
         trace: TraceRecorder,
         max_retries: int = 1,
         seed: int | None = None,
+        cache: ResponseCache | None = None,
+        cache_stats: CacheStats | None = None,
     ) -> None:
         self.provider = provider
         self.budget = budget
         self.trace = trace
         self.max_retries = max_retries
         self.seed = seed
+        self.cache = cache
+        self.cache_stats = cache_stats
+        self.calls = 0
 
     def _request(
         self, node: CompiledNode, prompt: RenderedPrompt, *, temperature: float
@@ -96,12 +119,47 @@ class Executor:
         )
 
     def call(
-        self, node: CompiledNode, prompt: RenderedPrompt, *, temperature: float
+        self,
+        node: CompiledNode,
+        prompt: RenderedPrompt,
+        *,
+        temperature: float,
+        graph: CompiledGraph,
     ) -> ChatResponse:
         request = self._request(node, prompt, temperature=temperature)
+
+        # A cache hit bypasses the provider entirely: no token/cost pre-flight, no
+        # provider call, and no budget charge. The recorded response is emitted as a
+        # normal ``provider.response`` (with ``cached: true``) so trace replay still
+        # works, plus a distinct accounting event.
+        cache_key: CacheKey | None = None
+        if self.cache is not None and self.cache.readable:
+            cache_key = build_cache_key(
+                node=node, graph=graph, request=request, provider=self.provider.name
+            )
+            entry = self.cache.get(cache_key)
+            if entry is not None:
+                self.budget.check_wall()
+                return self._cached_response(node, request, entry, cache_key)
+            self.trace.emit(
+                "cache.miss",
+                node=node.id,
+                cache_key=cache_key.value,
+                mode=self.cache.mode,
+                wrote=self.cache.writable,
+            )
+            if self.cache_stats is not None:
+                self.cache_stats.misses += 1
+
         estimated = self.budget.estimate_tokens(prompt.messages, request.max_output_tokens)
         self.budget.check_tokens(estimated)
         self.budget.check_wall()
+        self.calls += 1
+        if self.calls > MAX_CALLS_PER_NODE:
+            raise RuntimeFailure(
+                f"node {node.id!r} exceeded the hard provider-call limit ({MAX_CALLS_PER_NODE})",
+                details={"code": "MG-4005", "limit": MAX_CALLS_PER_NODE},
+            )
         attempts = 0
         while True:
             attempts += 1
@@ -125,7 +183,7 @@ class Executor:
                     retryable=exc.retryable,
                     attempt=attempts,
                 )
-                if exc.retryable and attempts <= 2:
+                if exc.retryable and attempts < MAX_PROVIDER_ATTEMPTS:
                     time.sleep(0.05 * attempts)
                     continue
                 raise
@@ -149,7 +207,106 @@ class Executor:
                 used_tokens=self.budget.used_tokens,
                 used_cost_usd=round(self.budget.used_cost_usd, 8),
             )
+            # Only a successful, accepted response is cached: a provider failure or a
+            # budget charge that raises leaves no entry behind.
+            if cache_key is not None:
+                self._store(node, response, cache_key)
             return response
+
+    def _cached_response(
+        self,
+        node: CompiledNode,
+        request: ChatRequest,
+        entry: CacheEntry,
+        cache_key: CacheKey,
+    ) -> ChatResponse:
+        hit_id = new_id("cachehit")
+        avoided_tokens = entry.usage.total_tokens
+        avoided_cost = self.budget.cost_for(entry.usage, node)
+        if self.cache_stats is not None:
+            self.cache_stats.hits += 1
+            self.cache_stats.avoided_tokens += avoided_tokens
+            self.cache_stats.avoided_cost_usd += avoided_cost
+        self.trace.emit(
+            "provider.response",
+            node=node.id,
+            model=request.model,
+            provider=self.provider.name,
+            text=entry.text,
+            usage=entry.usage.to_dict(),
+            finish_reason=entry.finish_reason,
+            latency_seconds=0.0,
+            attempt=1,
+            cached=True,
+            cache_hit_id=hit_id,
+        )
+        self.trace.emit(
+            "provider.response.cached",
+            node=node.id,
+            model=request.model,
+            provider=self.provider.name,
+            usage=entry.usage.to_dict(),
+            finish_reason=entry.finish_reason,
+            avoided_tokens=avoided_tokens,
+            avoided_cost_usd=round(avoided_cost, 8),
+            cached=True,
+            cache_hit_id=hit_id,
+            cache_key=cache_key.value,
+        )
+        return ChatResponse(
+            text=entry.text,
+            usage=entry.usage,
+            finish_reason=entry.finish_reason,
+            provider_meta=dict(entry.provider_meta),
+        )
+
+    def _store(self, node: CompiledNode, response: ChatResponse, cache_key: CacheKey) -> None:
+        if self.cache is None or not self.cache.writable:
+            return
+        patterns = response_has_default_secret(response)
+        if patterns:
+            # Never cache a response that contains a default secret/PII pattern. The
+            # event carries pattern names only, never the matched text or response.
+            if self.cache_stats is not None:
+                self.cache_stats.skipped += 1
+            self.trace.emit(
+                "cache.skipped",
+                node=node.id,
+                reason="default-secret-pattern",
+                patterns=patterns,
+            )
+            return
+        entry = CacheEntry(
+            text=response.text,
+            usage=response.usage,
+            finish_reason=response.finish_reason,
+            provider_meta=dict(response.provider_meta),
+            created_at=utc_now(),
+            key=cache_key.value,
+            key_metadata=cache_key.metadata,
+        )
+        if self.cache.put(cache_key, entry):
+            if self.cache_stats is not None:
+                self.cache_stats.writes += 1
+        else:
+            if self.cache_stats is not None:
+                self.cache_stats.skipped += 1
+            self.trace.emit("cache.skipped", node=node.id, reason="write-failed")
+
+
+def _trace_render(trace: TraceRecorder, node: CompiledNode, prompt: RenderedPrompt) -> None:
+    """Record the render plus one visible event per truncation."""
+
+    fields: dict[str, object] = {
+        "node": node.id,
+        "prompt_hash": prompt.prompt_hash,
+        "tokens": prompt.estimated_tokens,
+    }
+    if prompt.truncated:
+        fields["truncated"] = prompt.truncated
+    trace.emit("render.completed", **fields)
+    for item in prompt.truncated:
+        trace.emit("render.truncated", node=node.id, **item)
 
 
 class RouterExecutor:
@@ -163,13 +320,8 @@ class RouterExecutor:
         state: RuntimeState,
     ) -> RouteDecision:
         prompt = render_prompt(node, graph, state)
-        self.executor.trace.emit(
-            "render.completed",
-            node=node.id,
-            prompt_hash=prompt.prompt_hash,
-            tokens=prompt.estimated_tokens,
-        )
-        response = self.executor.call(node, prompt, temperature=0.0)
+        _trace_render(self.executor.trace, node, prompt)
+        response = self.executor.call(node, prompt, temperature=0.0, graph=graph)
         try:
             decision = self._parse(response.text, node, graph)
         except RuntimeFailure as exc:
@@ -184,7 +336,7 @@ class RouterExecutor:
                     "confidence, and reason. Choose only from the menu."
                 ),
             )
-            response = self.executor.call(node, repair, temperature=0.0)
+            response = self.executor.call(node, repair, temperature=0.0, graph=graph)
             decision = self._parse(response.text, node, graph)
 
         if decision.action == "route":
@@ -205,7 +357,7 @@ class RouterExecutor:
                             f"threshold {threshold:.2f}. Choose a route more decisively or abstain."
                         ),
                     )
-                    response = self.executor.call(node, retry, temperature=0.0)
+                    response = self.executor.call(node, retry, temperature=0.0, graph=graph)
                     decision = self._parse(response.text, node, graph)
                 if decision.confidence < threshold:
                     raise RuntimeFailure(
@@ -291,12 +443,7 @@ class WorkerExecutor:
 
     def run(self, node: CompiledNode, graph: CompiledGraph, state: RuntimeState) -> Execution:
         prompt = render_prompt(node, graph, state)
-        self.executor.trace.emit(
-            "render.completed",
-            node=node.id,
-            prompt_hash=prompt.prompt_hash,
-            tokens=prompt.estimated_tokens,
-        )
+        _trace_render(self.executor.trace, node, prompt)
         temperature = (
             node.limits.temperature
             if node.limits and node.limits.temperature is not None
@@ -304,7 +451,7 @@ class WorkerExecutor:
         )
         if temperature is None:
             temperature = 0.2
-        response = self.executor.call(node, prompt, temperature=temperature)
+        response = self.executor.call(node, prompt, temperature=temperature, graph=graph)
         try:
             artifacts = parse_artifacts(response.text, node)
         except RuntimeFailure as exc:
@@ -319,7 +466,7 @@ class WorkerExecutor:
                     "Return exactly the requested artifact content or the required MG blocks."
                 ),
             )
-            response = self.executor.call(node, repair, temperature=0.0)
+            response = self.executor.call(node, repair, temperature=0.0, graph=graph)
             artifacts = parse_artifacts(response.text, node)
         for artifact in artifacts:
             state.write(

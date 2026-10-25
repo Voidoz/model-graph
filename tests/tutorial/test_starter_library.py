@@ -184,6 +184,7 @@ def test_mock_hello_run_trace_artifacts_and_replay(tmp_path: Path) -> None:
                 task,
                 "--runs-dir",
                 str(runs),
+                "--no-cache",
                 "--json",
             ]
         )
@@ -246,6 +247,7 @@ def test_mock_specialist_composition_and_writing_runs(tmp_path: Path) -> None:
                 "Add types to this React hook.",
                 "--runs-dir",
                 str(runs),
+                "--no-cache",
                 "--json",
             ]
         )
@@ -265,6 +267,7 @@ def test_mock_specialist_composition_and_writing_runs(tmp_path: Path) -> None:
                 "mock",
                 "--runs-dir",
                 str(runs),
+                "--no-cache",
                 "--json",
             ]
         )
@@ -284,6 +287,7 @@ def test_mock_specialist_composition_and_writing_runs(tmp_path: Path) -> None:
                 "Tell me a story about a lighthouse keeper.",
                 "--runs-dir",
                 str(runs),
+                "--no-cache",
                 "--json",
             ]
         )
@@ -309,6 +313,7 @@ def test_profile_pruning_is_recorded_and_does_not_edit_the_graph(tmp_path: Path)
                 str(PROFILES / "local-4gb.yaml"),
                 "--runs-dir",
                 str(runs),
+                "--no-cache",
                 "--json",
             ]
         )
@@ -340,6 +345,7 @@ def test_profile_pruning_is_recorded_and_does_not_edit_the_graph(tmp_path: Path)
                 "local-8gb",
                 "--runs-dir",
                 str(runs),
+                "--no-cache",
                 "--json",
             ]
         )
@@ -362,6 +368,7 @@ def test_no_network_profile_is_an_audited_failure(tmp_path: Path) -> None:
             str(PROFILES / "no-network.yaml"),
             "--runs-dir",
             str(tmp_path / "runs"),
+            "--no-cache",
             "--json",
         ],
         expect=3,

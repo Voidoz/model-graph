@@ -27,6 +27,7 @@ from modelgraph.evaluation import (
 )
 from modelgraph.evaluation.compare import compare_against_baseline, gate_summary
 from modelgraph.evaluation.report import default_report_dir
+from modelgraph.paths import cache_dir as default_cache_dir
 from modelgraph.paths import runs_dir as default_runs_dir
 from modelgraph.providers import build_provider
 from modelgraph.providers.base import Provider
@@ -64,10 +65,12 @@ from modelgraph.revision import (
     status_report,
 )
 from modelgraph.runtime.budget import Budget
+from modelgraph.runtime.cache import CACHE_MODES, ResponseCache
 from modelgraph.runtime.engine import run_graph
 from modelgraph.runtime.manifest import read_run_manifest, recover_interrupted_runs
 from modelgraph.runtime.replay import replay_run
 from modelgraph.runtime.trace import read_events
+from modelgraph.security import profile_security_warnings
 
 app = typer.Typer(
     name="mg",
@@ -658,6 +661,15 @@ def run(
     seed: int | None = typer.Option(
         None, "--seed", help="Deterministic sampling seed passed to every provider request."
     ),
+    cache_mode: str = typer.Option(
+        "on", "--cache-mode", help="Exact-match response cache: on, off, or readonly."
+    ),
+    cache_directory: Path | None = typer.Option(
+        None, "--cache-dir", help="Local response-cache directory (default: cache/responses)."
+    ),
+    no_cache: bool = typer.Option(
+        False, "--no-cache", help="Bypass cache reads and writes (same as --cache-mode off)."
+    ),
     profile_ref: str | None = typer.Option(
         None, "--profile", help="Run profile file or profile name."
     ),
@@ -669,13 +681,29 @@ def run(
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """Compile and run a graph, writing a trace and run manifest."""
+    try:
+        response_cache = _response_cache(
+            cache_mode,
+            cache_directory if cache_directory is not None else default_cache_dir(),
+            no_cache=no_cache,
+        )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     profile: Profile | None = None
     profile_path: Path | None = None
     prune_report: PruneReport | None = None
     try:
+        from modelgraph.observability import build_logger_from_env, build_span_exporter
+
+        log = build_logger_from_env()
+        span_exporter = build_span_exporter()
         if profile_ref:
             profile_path = resolve_profile_path(profile_ref)
             profile = load_profile(profile_path)
+            for warning in profile_security_warnings(profile):
+                if not as_json:
+                    typer.echo(f"warning: {warning}", err=True)
         result = compile_graph(
             graph,
             registry=_registry(registry_dir),
@@ -728,6 +756,9 @@ def run(
             prune_report=prune_report.to_dict() if prune_report is not None else None,
             model_loads=loader.records,
             seed=seed,
+            cache=response_cache,
+            logger=log,
+            span_exporter=span_exporter,
         )
         if outcome.run_dir is not None and outcome.manifest is not None:
             annotate_run_trace(outcome.run_dir, outcome.manifest)
@@ -754,6 +785,15 @@ def run(
             f"tokens={outcome.usage.get('total_tokens')} "
             f"cost=${outcome.usage.get('cost_usd', 0):.6f} "
             f"elapsed={outcome.usage.get('elapsed_seconds')}s"
+        )
+        cache_info = outcome.cache
+        typer.echo(
+            "cache:    "
+            f"mode={cache_info.get('mode', 'off')} "
+            f"hits={cache_info.get('hits', 0)} "
+            f"misses={cache_info.get('misses', 0)} "
+            f"avoided_tokens={cache_info.get('avoided_tokens', 0)} "
+            f"avoided_cost=${cache_info.get('avoided_cost_usd', 0.0):.6f}"
         )
         for entry in outcome.path:
             transition = f" -> {entry.to}" if entry.to else ""
@@ -1459,6 +1499,21 @@ def status(
     typer.echo(f"note:     {report.get('note')}")
 
 
+def _response_cache(mode: str, directory: Path, *, no_cache: bool = False) -> ResponseCache | None:
+    """Resolve ``--cache-mode``/``--no-cache`` into a cache or ``None`` (off)."""
+
+    normalized = mode.strip().lower()
+    if no_cache:
+        if normalized == "readonly":
+            raise ValueError("--no-cache conflicts with --cache-mode readonly")
+        normalized = "off"
+    if normalized not in CACHE_MODES:
+        raise ValueError(f"unknown --cache-mode {mode!r}; expected one of {', '.join(CACHE_MODES)}")
+    if normalized == "off":
+        return None
+    return ResponseCache(directory, mode=normalized)
+
+
 def _provider_factory(
     provider_name: str, scenario: MockScenario
 ) -> Callable[[ModelManifest], Provider]:
@@ -1520,6 +1575,64 @@ def _budget(
     if max_cost is not None:
         budget.max_cost_usd = max_cost
     return budget
+
+
+@app.command()
+def stats(
+    runs_directory: Path = typer.Option(
+        default_runs_dir(), "--runs-dir", help="Directory containing recorded runs."
+    ),
+    last: int = typer.Option(20, "--last", help="Summarize the N most recent runs."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable summary."),
+) -> None:
+    """Summarize recent recorded runs from their traces, without calling a provider."""
+    if last < 1:
+        typer.echo("error: --last must be at least 1", err=True)
+        raise typer.Exit(code=2)
+    # Imported here so the stats command stays a read-only projection and cannot pull in a
+    # provider or registry construction path.
+    from modelgraph.observability import collect_stats
+
+    try:
+        report = collect_stats(runs_directory, last=last)
+    except OSError as exc:
+        typer.echo(f"error: cannot read runs in {runs_directory}: {exc}", err=True)
+        raise typer.Exit(code=3) from exc
+    if as_json:
+        typer.echo(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+        return
+    typer.echo(f"runs dir: {report.runs_dir}")
+    if report.available_runs == 0:
+        typer.echo("no runs recorded")
+        return
+    snapshot = report.metrics
+    typer.echo(f"runs:     {report.selected_runs} of {report.available_runs} (last {last})")
+    outcomes = (
+        " ".join(f"{name}={count}" for name, count in sorted(snapshot.outcomes.items())) or "none"
+    )
+    typer.echo(f"outcomes: {outcomes}")
+    success = report.success_rate
+    typer.echo(f"success:  {f'{success * 100:.1f}%' if success is not None else '—'}")
+    typer.echo(
+        f"tokens:   input={snapshot.total_input_tokens} "
+        f"output={snapshot.total_output_tokens} total={snapshot.total_tokens}"
+    )
+    typer.echo(f"cost:     ${snapshot.total_cost_usd:.6f}")
+    latency = snapshot.latency
+    typer.echo(
+        f"latency:  p50={_format_number(latency.get('p50_seconds'), 3)}s "
+        f"p95={_format_number(latency.get('p95_seconds'), 3)}s (n={latency.get('count', 0)})"
+    )
+    typer.echo(
+        f"cache:    hits={snapshot.cache.get('hits', 0)} misses={snapshot.cache.get('misses', 0)}"
+    )
+    if report.top_failure_codes:
+        typer.echo(
+            "failures: "
+            + ", ".join(f"{entry['code']}={entry['count']}" for entry in report.top_failure_codes)
+        )
+    else:
+        typer.echo("failures: none")
 
 
 if __name__ == "__main__":

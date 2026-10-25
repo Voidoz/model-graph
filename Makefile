@@ -1,22 +1,26 @@
 UV ?= uv
+UV_CACHE_DIR ?= $(CURDIR)/.uv-cache
+UV_PYTHON_INSTALL_DIR ?= $(CURDIR)/.uv-python
+UV_TOOL_DIR ?= $(CURDIR)/.uv-tools
+export UV_CACHE_DIR UV_PYTHON_INSTALL_DIR UV_TOOL_DIR
 PYTEST ?= $(UV) run pytest
 RUFF ?= $(UV) run ruff
 MYPY ?= $(UV) run mypy
 EVAL_REPORTS ?= runs/evals/ci
 BASELINES ?= evals/baselines
 
-.PHONY: sync format lint type test live-test ui-check check clean eval-candidates eval-gates baselines nightly
+.PHONY: sync format lint type test live-test ui-check check audit clean eval-candidates eval-gates baselines nightly
 
 sync:
 	$(UV) sync
 
 format:
-	$(RUFF) format src tests
-	$(RUFF) check --fix src tests
+	$(RUFF) format src tests scripts
+	$(RUFF) check --fix src tests scripts
 
 lint:
-	$(RUFF) format --check src tests
-	$(RUFF) check src tests
+	$(RUFF) format --check src tests scripts
+	$(RUFF) check src tests scripts
 
 type:
 	$(MYPY) src
@@ -32,6 +36,15 @@ ui-check:
 	$(UV) run python tests/web/smoke_ui.py
 
 check: lint type test
+
+# Network-dependent dependency audit. Deliberately NOT part of `check`, which must stay
+# offline and deterministic. CI runs this as a separate job; see docs/security.md for the
+# failure policy and waiver rule.
+audit:
+	@tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
+	$(UV) export --frozen --no-dev --no-hashes --format requirements-txt > "$$tmp"; \
+	XDG_CACHE_HOME="$(CURDIR)/.uv-cache/xdg" \
+		$(UV)x pip-audit --requirement "$$tmp" --progress-spinner off
 
 eval-candidates:
 	rm -rf $(EVAL_REPORTS)

@@ -42,3 +42,15 @@ def runs_dir() -> Path:
     if override:
         return Path(override).expanduser().resolve()
     return Path.cwd() / "runs"
+
+
+def cache_dir() -> Path:
+    """Default local response-cache directory (``cache/responses``).
+
+    Override with ``MG_CACHE_DIR`` or the CLI ``--cache-dir`` flag. The cache is local
+    and per-user; there is no shared or remote cache.
+    """
+    override = os.environ.get("MG_CACHE_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path.cwd() / "cache" / "responses"

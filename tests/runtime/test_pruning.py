@@ -684,6 +684,7 @@ def test_cli_budget_flags_apply_after_profile_overrides(tmp_path: Path) -> None:
             "4",
             "--runs-dir",
             str(tmp_path),
+            "--no-cache",
             "--json",
         ],
     )
@@ -713,6 +714,7 @@ def test_cli_records_profile_and_prune_report_without_editing_yaml(tmp_path: Pat
             "mock",
             "--runs-dir",
             str(tmp_path),
+            "--no-cache",
             "--json",
         ],
     )
@@ -753,6 +755,7 @@ def test_cli_prune_failure_prints_report_and_exits_nonzero(tmp_path: Path) -> No
             "mock",
             "--runs-dir",
             str(tmp_path),
+            "--no-cache",
             "--json",
         ],
     )
@@ -773,6 +776,7 @@ def test_cli_run_without_profile_still_works(tmp_path: Path) -> None:
             "mock",
             "--runs-dir",
             str(tmp_path),
+            "--no-cache",
             "--json",
         ],
     )

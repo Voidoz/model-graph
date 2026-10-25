@@ -143,7 +143,8 @@ node, executed once on real hardware.
 - A new user can go from clone to a running local graph by following one tutorial.
 - The inspector renders a graph and a trace, including decisions and artifacts.
 - The security checklist passes for a local release: no secrets in traces, delimited
-  content, budget enforcement, dependency audit.
+  content, budget enforcement, dependency audit. The threat model, enforced baseline, and
+  release checklist are in [security.md](security.md).
 - `mg run` emits structured events suitable for external monitoring.
 
 **Milestone M4 — "Usable v0"**. T-0038/T-0040 are the v0.1 iteration track; they improve model swapping but are not required for M4.

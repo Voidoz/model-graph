@@ -40,6 +40,14 @@ BUDGET_OVERRIDE_KEYS = (
     "max_wall_seconds",
     "on_budget_exhausted",
 )
+#: Hard ceilings mirroring the graph schema maxima. A profile (even with
+#: --allow-budget-override) cannot raise a run past these; they bound runaway configuration.
+HARD_BUDGET_LIMITS: dict[str, int | float] = {
+    "max_steps": 64,
+    "max_depth": 8,
+    "max_total_tokens": 10_000_000,
+    "max_wall_seconds": 86_400,
+}
 
 
 class ProfileError(ModelGraphError):
@@ -318,6 +326,13 @@ def apply_budget_overrides(
     warnings: list[str] = []
     for key in sorted(overrides):
         value = overrides[key]
+        hard_limit = HARD_BUDGET_LIMITS.get(key)
+        if hard_limit is not None and float(value) > float(hard_limit):
+            warnings.append(
+                f"profile override {key}={value!r} ignored because it exceeds the hard "
+                f"limit {hard_limit!r}"
+            )
+            continue
         if not allow_raise and _loosens_default(key, value, getattr(defaults, key)):
             warnings.append(
                 f"profile override {key}={value!r} ignored because it raises the graph default "

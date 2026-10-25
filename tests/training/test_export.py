@@ -73,11 +73,15 @@ def _make_run(
         responses={"triage": [decision], route: [response]},
         failures={failure_node: "MG-3001"} if failure_node else {},
     )
+    # This suite deliberately exercises the dataset exporter's own redaction pass, so the
+    # fixture runs opt out of the runtime's default pre-persistence trace redaction. Real
+    # runs keep the runtime default; see docs/security.md.
     outcome = run_graph(
         _compile(),
         task,
         lambda model: MockProvider(scenario, max_context=model.spec.context_window),
         runs_dir=tmp_path / "runs",
+        redact_persisted=False,
     )
     assert outcome.run_dir is not None
     return outcome.run_dir

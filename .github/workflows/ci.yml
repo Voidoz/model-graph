@@ -20,6 +20,21 @@ jobs:
       - run: uv sync --locked
       - run: make check
 
+  dependency-audit:
+    # Network-dependent and therefore separate from `make check` (which must stay offline).
+    # A failure is a release/merge blocker: fix, upgrade, or add a documented waiver with an
+    # issue link and an expiry in the Makefile. See docs/security.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Audit locked runtime dependencies
+        run: make audit
+
   eval-gates:
     runs-on: ubuntu-latest
     steps:

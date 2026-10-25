@@ -13,7 +13,7 @@ runner = CliRunner()
 def test_version() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert result.stdout.strip() == "0.4.0"
+    assert result.stdout.strip() == "0.5.0"
 
 
 def test_validate_json() -> None:
@@ -38,6 +38,7 @@ def test_run_mock_and_replay(tmp_path: Path) -> None:
             "mock",
             "--runs-dir",
             str(tmp_path),
+            "--no-cache",
             "--seed",
             "17",
             "--json",
@@ -67,6 +68,7 @@ def test_trace_show_json(tmp_path: Path) -> None:
             "mock",
             "--runs-dir",
             str(tmp_path),
+            "--no-cache",
             "--json",
         ],
     )
@@ -103,6 +105,7 @@ def test_budget_override_fails(tmp_path: Path) -> None:
             "mock",
             "--runs-dir",
             str(tmp_path),
+            "--no-cache",
             "--max-steps",
             "1",
             "--json",

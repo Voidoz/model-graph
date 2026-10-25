@@ -45,7 +45,7 @@ uv sync
 uv run mg version
 ```
 
-Expected: `0.4.0` (or the current version). The test suite is offline:
+Expected: `0.5.0` (or the current version). The test suite is offline:
 
 ```text
 uv run pytest -q
@@ -150,6 +150,12 @@ uv run mg run graphs/hello-triage.graph.yaml \
 
 The first call loads the model, so it is slower. If it fails, jump to
 [troubleshooting](#troubleshooting).
+
+`mg run` also uses a local exact-match response cache by default. A repeat of the same
+graph/model/prompt/parameters/seed is served from the cache: it reports `cache hits`, zero tokens,
+and avoided usage, and finishes almost instantly. Add `--no-cache` when you want to force a fresh
+provider call; `--cache-mode readonly` reads without writing. The cache never stores prompts or
+API keys, and responses containing default secret/PII patterns are not cached.
 
 ## 5. Read the trace, decision, artifacts, and cost
 

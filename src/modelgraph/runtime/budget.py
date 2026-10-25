@@ -84,7 +84,7 @@ class Budget:
         self.used_tokens += usage.total_tokens
         self.used_input_tokens += usage.input_tokens
         self.used_output_tokens += usage.output_tokens
-        cost = self._cost(usage, node)
+        cost = self.cost_for(usage, node)
         self.used_cost_usd += cost
         if self.used_tokens > self.max_total_tokens:
             raise BudgetExceeded(
@@ -98,7 +98,11 @@ class Budget:
             )
         return cost
 
-    def _cost(self, usage: Usage, node: CompiledNode) -> float:
+    def cost_for(self, usage: Usage, node: CompiledNode) -> float:
+        """Estimated cost of ``usage`` without charging it.
+
+        Used to report avoided cost for a cache hit; a hit must not mutate budget usage.
+        """
         if node.model is None:
             return 0.0
         cost = node.model.spec.cost

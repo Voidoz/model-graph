@@ -16,6 +16,7 @@ from typing import Any
 
 from modelgraph.contracts.loader import load_document
 from modelgraph.errors import ModelGraphError
+from modelgraph.security import DEFAULT_PATTERNS
 
 ACTIONS = ("hash", "mask", "drop")
 
@@ -39,15 +40,8 @@ class FieldRule:
     action: str
 
 
-DEFAULT_PATTERNS: tuple[tuple[str, str], ...] = (
-    ("private-key", r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----"),
-    ("openai-api-key", r"\bsk-[A-Za-z0-9_-]{10,}\b"),
-    ("github-token", r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
-    ("aws-access-key", r"\bAKIA[0-9A-Z]{16}\b"),
-    ("bearer-token", r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*"),
-    ("email", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
-    ("home-path", r"(?:/home|/Users)/[^/\s\"']+"),
-)
+# The default pattern set lives in ``modelgraph.security`` so traces, dataset export, and
+# the secret scanner share one definition. It is re-exported here for backwards compatibility.
 
 
 @dataclass

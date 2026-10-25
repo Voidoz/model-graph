@@ -15,6 +15,7 @@ from modelgraph.providers.base import (
     ProviderFailure,
     Usage,
 )
+from modelgraph.security import RedactionReport, redact_data
 from modelgraph.util import utc_now
 
 
@@ -28,11 +29,24 @@ class TraceRecorder:
         self.events.append(record)
         return record
 
-    def write(self, path: Path) -> None:
+    def write(self, path: Path, *, redact: bool = True) -> RedactionReport | None:
+        """Write the event stream, redacting secret/PII-shaped text by default.
+
+        The in-memory events are left untouched so the producing run can still use them;
+        only the persisted JSONL is scrubbed. The returned report contains pattern names,
+        counts, field paths, and truncated hashes, never the matched text.
+        """
+
+        report: RedactionReport | None = None
+        events: list[dict[str, Any]] = self.events
+        if redact:
+            redacted, report = redact_data(self.events)
+            events = redacted
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as handle:
-            for event in self.events:
+            for event in events:
                 handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+        return report
 
 
 def read_events(path: str | Path) -> list[dict[str, Any]]:

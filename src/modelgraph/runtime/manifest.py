@@ -26,6 +26,7 @@ from modelgraph.contracts.envelope import Artifact, PathEntry
 from modelgraph.errors import ModelGraphError
 from modelgraph.providers.base import Provider
 from modelgraph.runtime.budget import Budget
+from modelgraph.security import redact_data, redact_text_default
 from modelgraph.util import canonical_json, sha256_text, utc_now
 from modelgraph.version import PARSER_VERSION, RENDERER_VERSION
 
@@ -128,6 +129,7 @@ def build_run_manifest(
     providers: Sequence[Provider] | None = None,
     trace: str = "trace.jsonl",
     environment: Mapping[str, Any] | None = None,
+    redact: bool = True,
 ) -> dict[str, Any]:
     """Build a schema-shaped manifest for either the provisional or final write."""
     models = _model_records(graph)
@@ -181,7 +183,29 @@ def build_run_manifest(
         manifest["prune"] = dict(prune_report)
     if model_loads is not None:
         manifest["model_loads"] = [dict(item) for item in model_loads]
+    if redact:
+        _redact_manifest_fields(manifest)
     return manifest
+
+
+def _redact_manifest_fields(manifest: dict[str, Any]) -> None:
+    """Redact user/model-derived text that can carry secrets.
+
+    Hashes, ids, and graph source paths are evidence and are left intact. The request text,
+    router reasons, and error payload are the manifest fields that can quote unstructured
+    content.
+    """
+
+    request = manifest.get("request")
+    if isinstance(request, dict) and isinstance(request.get("task"), str):
+        request["task"] = redact_text_default(request["task"])
+    for entry in manifest.get("path") or []:
+        if isinstance(entry, dict) and isinstance(entry.get("reason"), str):
+            entry["reason"] = redact_text_default(entry["reason"])
+    error = manifest.get("error")
+    if isinstance(error, Mapping):
+        redacted, _report = redact_data(dict(error))
+        manifest["error"] = redacted
 
 
 def write_manifest_atomic(run_dir: str | Path, manifest: Mapping[str, Any]) -> Path:

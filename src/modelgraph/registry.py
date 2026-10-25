@@ -10,6 +10,7 @@ from modelgraph.contracts.loader import load_document
 from modelgraph.contracts.manifest import ModelManifest
 from modelgraph.errors import ModelGraphError
 from modelgraph.paths import project_root
+from modelgraph.security import manifest_trust_violations
 from modelgraph.util import canonical_json, sha256_text
 
 
@@ -45,8 +46,18 @@ class Registry:
     def _add_model(self, path: Path) -> None:
         try:
             document = load_document(path)
+        except ModelGraphError as exc:
+            raise ModelGraphError(f"invalid model manifest {path}: {exc}", path=str(path)) from exc
+        violations = manifest_trust_violations(document)
+        if violations:
+            raise ModelGraphError(
+                f"model manifest {path} violates the trust policy: " + "; ".join(violations),
+                path=str(path),
+                details={"violations": violations},
+            )
+        try:
             manifest = ModelManifest.model_validate(document)
-        except (ModelGraphError, ValidationError) as exc:
+        except ValidationError as exc:
             raise ModelGraphError(f"invalid model manifest {path}: {exc}", path=str(path)) from exc
         model_id = manifest.metadata.id
         existing = self.manifests.get(model_id)

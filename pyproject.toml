@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "modelgraph"
-version = "0.4.0"
+version = "0.5.0"
 description = "Compose small language models into a routed, observable graph."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -41,7 +41,7 @@ asyncio_mode = "auto"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
