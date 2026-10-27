@@ -1,7 +1,9 @@
 # Tutorial model manifests
 
-These manifests are resolved by the starter graphs in [`../../graphs/`](../../graphs/). They do
-not download anything: install each tag in Ollama before a live run.
+These flat manifests are resolved by the starter graphs in [`../../graphs/`](../../graphs/) and
+remain supported alongside the versioned contribution layout. They do not download anything:
+install each tag in Ollama before a live run. See [`../README.md`](../README.md) for the
+versioned registry, contribution evidence, and `mg registry verify`.
 
 ```text
 ollama pull qwen2.5:1.5b-instruct

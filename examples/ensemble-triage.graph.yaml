@@ -1,0 +1,115 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: ensemble-triage
+  name: Ensemble Triage
+  version: 1.0.0
+  description: Runs three independent specialists on one request and joins their candidates.
+  labels:
+    domain: general
+    difficulty: advanced
+  authors:
+    - Model Graph contributors
+  license: TBD
+spec:
+  entry: triage
+  inputs:
+    - name: task
+      type: text
+      required: true
+      description: The user request to answer with an ensemble.
+  exit: [answer]
+  defaults:
+    max_steps: 10
+    max_depth: 2
+    max_cost_usd: 0.10
+    max_wall_seconds: 300
+    max_total_tokens: 32000
+  nodes:
+    - id: triage
+      kind: router
+      description: Decides whether this request should run the ensemble.
+      model: router-small
+      reads: [task]
+      routing:
+        # Change to `top_k` with `k: 2` to run only the two best routes.
+        selection: all
+        confidence_threshold: 0.6
+        on_low_confidence: error
+        max_retries: 1
+    - id: js-candidate
+      kind: worker
+      description: Writes a JavaScript or TypeScript candidate.
+      model: js-specialist-3b
+      reads: [task]
+      instruction: |
+        You are a JavaScript and TypeScript specialist. Produce one candidate answer.
+        Put the final deliverable in the artifact named "js_answer".
+      writes:
+        - name: js_answer
+          type: code
+          media_type: text/typescript
+    - id: general-candidate
+      kind: worker
+      description: Writes a general programming candidate.
+      model: coder-7b
+      reads: [task]
+      instruction: |
+        You are a general software engineer. Produce one candidate answer.
+        Put the final deliverable in the artifact named "general_answer".
+      writes:
+        - name: general_answer
+          type: code
+          media_type: text/plain
+    - id: story-candidate
+      kind: worker
+      description: Writes a narrative candidate for writing-heavy requests.
+      model: story-7b
+      reads: [task]
+      instruction: |
+        Write the requested narrative or explanation as one candidate answer.
+        Put the final deliverable in the artifact named "story_answer".
+      writes:
+        - name: story_answer
+          type: text
+          media_type: text/markdown
+    - id: merge
+      kind: joiner
+      description: Merges the three independent candidates into one reviewed answer.
+      model: coder-7b
+      reads: [js_answer, general_answer, story_answer]
+      strategy: synthesize
+      instruction: |
+        Compare the candidates. State any disagreement and justify the chosen answer.
+        Produce the final deliverable in the artifact named "answer".
+      writes:
+        - name: answer
+          type: text
+  edges:
+    - from: triage
+      to: js-candidate
+      when: The request asks for JavaScript, TypeScript, or browser code.
+      examples:
+        - Write a TypeScript debounce function.
+      artifact: code
+      priority: 10
+    - from: triage
+      to: general-candidate
+      when: The request asks for programming work in another language.
+      examples:
+        - Explain a Rust borrow error.
+      artifact: code
+      priority: 5
+    - from: triage
+      to: story-candidate
+      when: The request asks for fiction, narrative, or a writing sample.
+      examples:
+        - Tell me a story about a lighthouse keeper.
+      artifact: text
+      priority: 0
+    - from: js-candidate
+      to: merge
+    - from: general-candidate
+      to: merge
+    - from: story-candidate
+      to: merge

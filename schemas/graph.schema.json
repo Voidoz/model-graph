@@ -103,7 +103,18 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "selection": {"type": "string", "enum": ["single"], "default": "single"},
+        "selection": {
+          "type": "string",
+          "enum": ["single", "top_k", "all"],
+          "default": "single",
+          "description": "How many menu routes this router activates: one, the k best, or all."
+        },
+        "k": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "Number of routes to activate when selection is top_k."
+        },
         "confidence_threshold": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.7},
         "on_low_confidence": {
           "type": "string",
@@ -112,7 +123,27 @@
         },
         "max_retries": {"type": "integer", "minimum": 0, "maximum": 5, "default": 1},
         "allow_direct_answer": {"type": "boolean", "default": false}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"selection": {"const": "top_k"}},
+            "required": ["selection"]
+          },
+          "then": {"required": ["k"]}
+        },
+        {
+          "if": {
+            "properties": {"selection": {"enum": ["single", "all"]}},
+            "required": ["selection"]
+          },
+          "then": {"properties": {"k": false}}
+        },
+        {
+          "if": {"not": {"required": ["selection"]}},
+          "then": {"properties": {"k": false}}
+        }
+      ]
     },
     "node": {
       "type": "object",

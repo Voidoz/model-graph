@@ -1,0 +1,96 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-router-top-k
+  name: Fixture Router Top K
+  version: 1.0.0
+  description: A router that activates the two best routes and joins their outputs.
+  labels:
+    domain: fixtures
+  authors:
+    - Contract fixture corpus
+  license: TBD
+spec:
+  entry: triage
+  inputs:
+    - name: task
+      type: text
+      required: true
+      description: The request to route.
+  exit: [answer]
+  defaults:
+    max_steps: 8
+    max_depth: 2
+    max_total_tokens: 16000
+    max_cost_usd: 0.05
+    max_wall_seconds: 60
+  nodes:
+    - id: triage
+      kind: router
+      description: Chooses the two most promising specialists.
+      model: fixture-router
+      reads: [task]
+      routing:
+        selection: top_k
+        k: 2
+        confidence_threshold: 0.5
+        on_low_confidence: error
+    - id: alpha
+      kind: worker
+      description: Produces the alpha draft.
+      model: fixture-worker
+      reads: [task]
+      instruction: Write the alpha draft.
+      writes:
+        - name: alpha_draft
+          type: text
+    - id: beta
+      kind: worker
+      description: Produces the beta draft.
+      model: fixture-worker
+      reads: [task]
+      instruction: Write the beta draft.
+      writes:
+        - name: beta_draft
+          type: text
+    - id: gamma
+      kind: worker
+      description: Produces the gamma draft.
+      model: fixture-worker
+      reads: [task]
+      instruction: Write the gamma draft.
+      writes:
+        - name: gamma_draft
+          type: text
+    - id: merge
+      kind: joiner
+      description: Merges the selected drafts into one answer.
+      model: fixture-worker
+      reads: [alpha_draft, beta_draft, gamma_draft]
+      strategy: synthesize
+      instruction: Merge the supplied drafts.
+      writes:
+        - name: answer
+          type: text
+  edges:
+    - from: triage
+      to: alpha
+      when: The request fits the alpha specialist.
+      artifact: text
+      priority: 10
+    - from: triage
+      to: beta
+      when: The request fits the beta specialist.
+      artifact: text
+      priority: 10
+    - from: triage
+      to: gamma
+      when: The request fits the gamma specialist.
+      artifact: text
+      priority: 0
+    - from: alpha
+      to: merge
+    - from: beta
+      to: merge
+    - from: gamma
+      to: merge

@@ -11,6 +11,8 @@ uv run mg eval node --suite evals/mock/js-specialist --provider mock
 uv run mg eval routing --suite evals/mock/triage --provider mock
 uv run mg eval e2e --suite evals/e2e/composed-assistant \
   --graph examples/composed-assistant.graph.yaml --provider mock --profile local-8gb
+uv run mg eval e2e --suite evals/e2e/coding-specialist \
+  --graph examples/coding-specialist.graph.yaml --provider mock
 ```
 
 Reports are written to `runs/evals/<report_id>/` (ignored by git) as `report.json`,
@@ -34,6 +36,9 @@ evals/
       cases.jsonl
   e2e/
     composed-assistant/
+      suite.yaml
+      cases.jsonl
+    coding-specialist/
       suite.yaml
       cases.jsonl
   fixtures/
@@ -106,7 +111,7 @@ Fields:
 | Field | Meaning |
 | --- | --- |
 | `level` | `node` or `routing`. |
-| `provider` | `mock` (default) or a live provider (`auto`, `ollama`, `openai-compatible`, `llamacpp`). Live runs are gated. |
+| `provider` | `mock` (default), `trained-router` (offline), or a live provider (`auto`, `ollama`, `openai-compatible`, `llamacpp`). Live runs are gated. |
 | `claim` | Copied into the report; state what the evidence supports. |
 | `target` | Node target (`graph`, `node`) or routing target (`graph`, optional `router`). |
 | `metric` | Primary metric used for the gate and paired comparison. |

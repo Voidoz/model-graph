@@ -14,6 +14,7 @@ See [`docs/quickstart.md`](../docs/quickstart.md) for the full walkthrough.
 | [`hello-triage.graph.yaml`](hello-triage.graph.yaml) | Minimal router with two workers and a fallback |
 | [`coding-specialist.graph.yaml`](coding-specialist.graph.yaml) | A nested coding team: JS/TS specialist vs. general coder |
 | [`composed-assistant.graph.yaml`](composed-assistant.graph.yaml) | The worked example: domain router → coding subgraph or storyteller |
+| [`ensemble-triage.graph.yaml`](ensemble-triage.graph.yaml) | Fan-out: a router runs three specialists and a joiner merges them |
 | [`envelope.json`](envelope.json) | A serialized runtime envelope with a path, note, and artifact |
 | [`models/`](models/) | Local model manifests used by the graphs |
 
@@ -41,10 +42,12 @@ names and licenses before publishing results.
 mg validate examples/hello-triage.graph.yaml
 mg validate examples/coding-specialist.graph.yaml
 mg validate examples/composed-assistant.graph.yaml
+mg validate examples/ensemble-triage.graph.yaml
 
 mg run examples/hello-triage.graph.yaml --provider mock
 mg run examples/hello-triage.graph.yaml --registry examples/models
 mg run examples/composed-assistant.graph.yaml --provider mock --json
+mg run examples/ensemble-triage.graph.yaml --provider mock --max-concurrency 2
 ```
 
 Profiles are a later ticket (T-0015); the MVP uses the provider declared in each manifest.

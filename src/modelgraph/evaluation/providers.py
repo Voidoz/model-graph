@@ -1,8 +1,8 @@
 """Provider wiring for evaluation.
 
-Mock runs are offline and deterministic. Any live provider is gated explicitly so CI never
-reaches a network by accident. Provider construction is delegated to the existing
-``build_provider`` factory; evaluation only decides when it is allowed.
+Mock and ``trained-router`` runs are offline and deterministic. Any live provider is gated
+explicitly so CI never reaches a network by accident. Provider construction is delegated to the
+existing ``build_provider`` factory; evaluation only decides when it is allowed.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from modelgraph.providers.mock import MockProvider, MockScenario
 LIVE_ENV = "MG_EVAL_LIVE"
 LIVE_VALUES = {"1", "true", "yes", "on"}
 LIVE_PROVIDERS = {"auto", "ollama", "openai-compatible", "llamacpp"}
+OFFLINE_PROVIDERS = {"mock", "trained-router"}
 
 
 def live_allowed(explicit: bool = False) -> bool:
@@ -29,7 +30,7 @@ def live_allowed(explicit: bool = False) -> bool:
 
 
 def require_live(provider: str, *, allow_live: bool) -> None:
-    if provider == "mock":
+    if provider in OFFLINE_PROVIDERS:
         return
     if provider not in LIVE_PROVIDERS:
         raise EvalError(f"unknown eval provider {provider!r}")
@@ -104,7 +105,7 @@ def provider_summary(
         "kind": kind,
         "gated_live": kind in LIVE_PROVIDERS,
         "live_gate_env": LIVE_ENV,
-        "deterministic_expected": kind == "mock",
+        "deterministic_expected": kind in OFFLINE_PROVIDERS,
         "suite_provider": suite.provider,
     }
     if pool is not None and pool.health():

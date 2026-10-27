@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:modelgraph:training:specialist-artifact:v0",
+  "title": "Specialist Training Artifact",
+  "description": "A self-describing specialist training artifact. The deterministic CPU rehearsal writes pseudo-weights and explicitly marks synthetic: true, quality_claim: false; a real recipe writes an adapter reference instead. Version: modelgraph/specialist-artifact/v0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "created_at",
+    "kind",
+    "synthetic",
+    "quality_claim",
+    "method",
+    "node",
+    "base_model",
+    "dataset",
+    "hyperparameters",
+    "seed",
+    "rehearsal",
+    "weights",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {"const": "modelgraph/specialist-artifact/v0"},
+    "version": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "minLength": 1},
+    "kind": {
+      "type": "string",
+      "enum": ["synthetic-specialist-rehearsal", "real-specialist-adapter"]
+    },
+    "synthetic": {"type": "boolean"},
+    "quality_claim": {"const": false},
+    "method": {"type": "string", "enum": ["lora", "qlora", "distill"]},
+    "node": {"type": ["string", "null"]},
+    "base_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "uri", "license"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "uri": {"type": ["string", "null"]},
+        "license": {"type": "string", "minLength": 1}
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "hash", "license", "consent", "counts", "sources"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "hash": {"type": "string", "minLength": 1},
+        "license": {"type": "string", "minLength": 1},
+        "consent": {"type": "object"},
+        "counts": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        },
+        "sources": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "hyperparameters": {"type": "object"},
+    "seed": {"type": "integer"},
+    "rehearsal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps", "examples", "note"],
+      "properties": {
+        "steps": {"type": "integer", "minimum": 0},
+        "examples": {"type": "integer", "minimum": 0},
+        "note": {"type": "string", "minLength": 1}
+      }
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "tensors", "note"],
+      "properties": {
+        "format": {"type": "string", "enum": ["pseudo-sha256", "peft-adapter"]},
+        "tensors": {"type": "array", "items": {"type": "object"}},
+        "note": {"type": "string", "minLength": 1}
+      }
+    },
+    "teacher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "license", "calls", "filter"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "license": {"type": "string", "minLength": 1},
+        "calls": {"type": "integer", "minimum": 0},
+        "filter": {"type": "string", "minLength": 1}
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

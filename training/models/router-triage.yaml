@@ -1,0 +1,50 @@
+# Reference binding for the trained router recipe (T-0024).
+#
+# The artifact is produced by:
+#   uv run mg train router --config training/configs/router-triage.yaml
+#
+# Keep integrity.sha256 empty here so the manifest works across retrains; fill it with the
+# artifact's SHA-256 for a pinned deployment. The provider verifies it when present.
+apiVersion: modelgraph/v0
+kind: Model
+metadata:
+  id: router-triage
+  name: Trained Triage Router
+  version: 0.1.0
+  description: >-
+    A local conditional-logit router trained on the synthetic T-0023 demo dataset. This is a
+    recipe example, not a promoted production model.
+  labels:
+    role: router
+    method: conditional-logit
+  authors:
+    - Model Graph contributors
+spec:
+  provider: trained-router
+  model: runs/training/router-triage/artifact.json
+  context_window: 32768
+  max_output_tokens: 512
+  capabilities: [chat, json_mode, seeded]
+  limits:
+    default_temperature: 0.0
+    default_max_output_tokens: 512
+    timeout_seconds: 5
+  cost:
+    pricing: free
+    notes: In-process linear scoring; no provider calls.
+  latency_ms:
+    p50: 1
+    p95: 5
+  resources:
+    ram_gb: 0.1
+    disk_gb: 0.1
+    cpu_only: true
+    network_access: none
+  license:
+    name: CC0-1.0
+    notes: Generated from the synthetic demo dataset.
+  integrity:
+    revision: "router-triage-demo@1.0.0"
+  notes: >-
+    The runtime treats this exactly like any other router provider: it renders the menu, calls
+    chat(), and parses the returned decision JSON. See docs/training.md §4.5.

@@ -1,0 +1,81 @@
+# Runnable T-0025 pipeline rehearsal (CPU, offline, deterministic).
+#
+# This config proves the artifact/manifest/card/eval/reproducibility pipeline. It does NOT
+# train a model: no optimizer step, no torch, no PEFT, no CUDA. The artifact is marked
+# synthetic and can never be promoted.
+#
+#   export UV_CACHE_DIR=$PWD/.uv-cache
+#   export UV_PYTHON_INSTALL_DIR=$PWD/.uv-python
+#   uv run python training/scripts/build_specialist_demo_dataset.py --seed 20261025 --count 40 --force
+#   uv run mg train specialist --config training/configs/specialist-synthetic.yaml --eval
+#   uv run pytest tests/training/test_specialist.py -q
+schema: modelgraph/specialist-training-config/v0
+name: js-specialist synthetic pipeline rehearsal
+method: lora
+mode: synthetic
+dataset: runs/training/specialist-dataset
+node: js-specialist
+output_dir: runs/training/js-specialist-synthetic
+seed: 20261025
+created_at: "2026-10-25T00:00:00Z"
+notes: >-
+  Synthetic rehearsal only. The eval hook uses the mock provider; a passing gate proves the
+  harness and the pinned graph, not model quality.
+model:
+  id: js-specialist-synthetic
+  name: JavaScript Specialist (synthetic rehearsal)
+  version: 0.1.0
+  description: >-
+    A deterministic CPU rehearsal of the specialist artifact pipeline. It contains pseudo-values,
+    is not usable for inference, and must never be promoted.
+  base: Qwen/Qwen2.5-Coder-3B-Instruct
+  base_uri: hf://Qwen/Qwen2.5-Coder-3B-Instruct
+  base_license: apache-2.0
+  provider: mock
+  model: synthetic-specialist://js-specialist@0.1.0
+  context_window: 32768
+  max_output_tokens: 2048
+  capabilities: [chat]
+  labels:
+    role: worker
+    domain: coding
+    language: javascript
+  resources:
+    ram_gb: 0.2
+    disk_gb: 0.1
+    cpu_only: true
+    network_access: none
+hyperparameters:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  learning_rate: 0.0002
+  epochs: 3
+  batch_size: 1
+  gradient_accumulation_steps: 16
+  max_seq_length: 2048
+  quantization: none
+  target_modules: [q_proj, k_proj, v_proj, o_proj]
+  optimizer: paged_adamw_8bit
+  scheduler: cosine
+  warmup_ratio: 0.03
+  gradient_checkpointing: true
+  notes: Values mirror the 8GB QLoRA recipe so the rehearsal exercises the same shape.
+hardware:
+  tier: cpu
+  gpu: CPU only (no CUDA driver in this environment)
+  vram_gb: 0
+  cpu_only: true
+  notes: Deterministic Python; under a second for the 40-example demo.
+  expected_data: 40 synthetic examples in the demo; 500-20,000 for a real specialist.
+  expected_runtime: seconds for the rehearsal; hours for a real 8GB/24GB run.
+evaluation:
+  node_suite: evals/mock/js-specialist
+  node_graph: examples/coding-specialist.graph.yaml
+  node: js-specialist
+  graph_suite: evals/e2e/coding-specialist
+  graph_graph: examples/coding-specialist.graph.yaml
+  provider: mock
+  reports_dir: runs/training/js-specialist-synthetic/eval/runs
+promotion:
+  require_passing_eval: true

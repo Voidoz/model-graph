@@ -20,6 +20,7 @@ class ProviderKind(StrEnum):
     ollama = "ollama"
     llamacpp = "llamacpp"
     custom = "custom"
+    trained_router = "trained-router"
 
 
 class Capability(StrEnum):

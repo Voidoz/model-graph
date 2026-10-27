@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from modelgraph.compiler.ir import CompiledGraph, CompiledNode
-from modelgraph.contracts.graph import ArtifactType, NodeKind
+from modelgraph.compiler.ir import CompiledEdge, CompiledGraph, CompiledNode
+from modelgraph.contracts.graph import ArtifactType, NodeKind, RoutingSelection
 from modelgraph.errors import RuntimeFailure
 from modelgraph.providers.base import (
     ChatRequest,
@@ -18,7 +19,7 @@ from modelgraph.providers.base import (
     ProviderFailure,
     Usage,
 )
-from modelgraph.runtime.budget import Budget
+from modelgraph.runtime.budget import Budget, Reservation
 from modelgraph.runtime.cache import (
     CacheEntry,
     CacheKey,
@@ -50,6 +51,12 @@ _ARTIFACT_BLOCK = re.compile(
 
 
 @dataclass(frozen=True)
+class RouteCandidate:
+    to: str
+    confidence: float
+
+
+@dataclass(frozen=True)
 class RouteDecision:
     action: str  # route | fallback
     to: str | None
@@ -57,6 +64,18 @@ class RouteDecision:
     reason: str
     note: str | None = None
     raw: str = ""
+    targets: tuple[str, ...] = ()
+    selection: str = RoutingSelection.single.value
+
+    @property
+    def selected(self) -> tuple[str, ...]:
+        """The routes to activate; empty for an abstain/fallback decision."""
+
+        if self.action != "route":
+            return ()
+        if self.targets:
+            return self.targets
+        return (self.to,) if self.to else ()
 
 
 @dataclass
@@ -65,6 +84,62 @@ class Execution:
     usage: Usage = field(default_factory=Usage)
     latency_seconds: float = 0.0
     text: str = ""
+
+
+@dataclass
+class UsageLedger:
+    """Per-branch accounting written by the executor and read after the branch settles."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+    calls: int = 0
+    cache_hits: int = 0
+    cached_tokens: int = 0
+    cached_cost_usd: float = 0.0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+    def add(self, usage: Usage, cost_usd: float) -> None:
+        with self._lock:
+            self.input_tokens += usage.input_tokens
+            self.output_tokens += usage.output_tokens
+            self.cost_usd += cost_usd
+            self.calls += 1
+
+    def add_cached(self, usage: Usage, cost_usd: float) -> None:
+        with self._lock:
+            self.cache_hits += 1
+            self.cached_tokens += usage.total_tokens
+            self.cached_cost_usd += cost_usd
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    def to_dict(self) -> dict[str, int | float]:
+        with self._lock:
+            return {
+                "input_tokens": self.input_tokens,
+                "output_tokens": self.output_tokens,
+                "total_tokens": self.input_tokens + self.output_tokens,
+                "cost_usd": round(self.cost_usd, 8),
+                "calls": self.calls,
+                "cache_hits": self.cache_hits,
+                "cached_tokens": self.cached_tokens,
+                "cached_cost_usd": round(self.cached_cost_usd, 8),
+            }
+
+
+def max_output_tokens(node: CompiledNode) -> int:
+    """The output cap an executor will request for ``node``."""
+
+    model = node.model
+    return (
+        (node.limits.max_output_tokens if node.limits else None)
+        or (model.spec.limits.default_max_output_tokens if model else None)
+        or (model.spec.max_output_tokens if model else None)
+        or 1024
+    )
 
 
 class Executor:
@@ -78,6 +153,7 @@ class Executor:
         seed: int | None = None,
         cache: ResponseCache | None = None,
         cache_stats: CacheStats | None = None,
+        ledger: UsageLedger | None = None,
     ) -> None:
         self.provider = provider
         self.budget = budget
@@ -86,6 +162,7 @@ class Executor:
         self.seed = seed
         self.cache = cache
         self.cache_stats = cache_stats
+        self.ledger = ledger
         self.calls = 0
 
     def _request(
@@ -94,12 +171,7 @@ class Executor:
         model = node.model
         if model is None:
             raise RuntimeFailure(f"node {node.id!r} has no model", details={"code": "MG-1003"})
-        max_output = (
-            (node.limits.max_output_tokens if node.limits else None)
-            or model.spec.limits.default_max_output_tokens
-            or model.spec.max_output_tokens
-            or 1024
-        )
+        max_output = max_output_tokens(node)
         json_mode = node.kind == NodeKind.router or any(
             write.type == ArtifactType.json for write in node.writes
         )
@@ -115,7 +187,7 @@ class Executor:
                 if node.limits and node.limits.timeout_seconds
                 else model.spec.limits.timeout_seconds or 120.0
             ),
-            metadata={"node_id": node.id},
+            metadata={"node_id": node.id, "prompt_hash": prompt.prompt_hash},
         )
 
     def call(
@@ -125,6 +197,7 @@ class Executor:
         *,
         temperature: float,
         graph: CompiledGraph,
+        reservation: Reservation | None = None,
     ) -> ChatResponse:
         request = self._request(node, prompt, temperature=temperature)
 
@@ -140,6 +213,7 @@ class Executor:
             entry = self.cache.get(cache_key)
             if entry is not None:
                 self.budget.check_wall()
+                self.budget.release(reservation)
                 return self._cached_response(node, request, entry, cache_key)
             self.trace.emit(
                 "cache.miss",
@@ -149,13 +223,17 @@ class Executor:
                 wrote=self.cache.writable,
             )
             if self.cache_stats is not None:
-                self.cache_stats.misses += 1
+                self.cache_stats.record_miss()
 
+        input_estimate = self.budget.estimate_input_tokens(prompt.messages)
         estimated = self.budget.estimate_tokens(prompt.messages, request.max_output_tokens)
-        self.budget.check_tokens(estimated)
+        estimated_cost = self.budget.estimate_cost(
+            node, input_tokens=input_estimate, output_tokens=request.max_output_tokens
+        )
         self.budget.check_wall()
         self.calls += 1
         if self.calls > MAX_CALLS_PER_NODE:
+            self.budget.release(reservation)
             raise RuntimeFailure(
                 f"node {node.id!r} exceeded the hard provider-call limit ({MAX_CALLS_PER_NODE})",
                 details={"code": "MG-4005", "limit": MAX_CALLS_PER_NODE},
@@ -163,6 +241,8 @@ class Executor:
         attempts = 0
         while True:
             attempts += 1
+            if reservation is None:
+                reservation = self.budget.reserve(estimated, estimated_cost)
             self.trace.emit(
                 "provider.request",
                 node=node.id,
@@ -170,11 +250,15 @@ class Executor:
                 provider=self.provider.name,
                 attempt=attempts,
                 prompt_hash=prompt.prompt_hash,
+                reserved_tokens=reservation.tokens,
+                reserved_cost_usd=round(reservation.cost_usd, 8),
             )
             started = time.monotonic()
             try:
                 response = self.provider.chat(request)
             except ProviderFailure as exc:
+                self.budget.release(reservation)
+                reservation = None
                 self.trace.emit(
                     "provider.error",
                     node=node.id,
@@ -182,6 +266,7 @@ class Executor:
                     message=exc.message,
                     retryable=exc.retryable,
                     attempt=attempts,
+                    prompt_hash=prompt.prompt_hash,
                 )
                 if exc.retryable and attempts < MAX_PROVIDER_ATTEMPTS:
                     time.sleep(0.05 * attempts)
@@ -197,15 +282,20 @@ class Executor:
                 finish_reason=response.finish_reason,
                 latency_seconds=round(latency, 4),
                 attempt=attempts,
+                prompt_hash=prompt.prompt_hash,
             )
-            cost = self.budget.charge(response.usage, node)
+            cost = self.budget.settle(reservation, response.usage, node)
+            reservation = None
+            if self.ledger is not None:
+                self.ledger.add(response.usage, cost)
+            usage_now = self.budget.usage()
             self.trace.emit(
                 "budget.charged",
                 node=node.id,
                 tokens=response.usage.total_tokens,
                 cost_usd=round(cost, 8),
-                used_tokens=self.budget.used_tokens,
-                used_cost_usd=round(self.budget.used_cost_usd, 8),
+                used_tokens=usage_now["total_tokens"],
+                used_cost_usd=round(float(usage_now["cost_usd"]), 8),
             )
             # Only a successful, accepted response is cached: a provider failure or a
             # budget charge that raises leaves no entry behind.
@@ -224,9 +314,10 @@ class Executor:
         avoided_tokens = entry.usage.total_tokens
         avoided_cost = self.budget.cost_for(entry.usage, node)
         if self.cache_stats is not None:
-            self.cache_stats.hits += 1
-            self.cache_stats.avoided_tokens += avoided_tokens
-            self.cache_stats.avoided_cost_usd += avoided_cost
+            self.cache_stats.record_hit(tokens=avoided_tokens, cost_usd=avoided_cost)
+        if self.ledger is not None:
+            self.ledger.add_cached(entry.usage, avoided_cost)
+        prompt_hash = request.metadata.get("prompt_hash")
         self.trace.emit(
             "provider.response",
             node=node.id,
@@ -239,6 +330,7 @@ class Executor:
             attempt=1,
             cached=True,
             cache_hit_id=hit_id,
+            prompt_hash=prompt_hash,
         )
         self.trace.emit(
             "provider.response.cached",
@@ -247,6 +339,7 @@ class Executor:
             provider=self.provider.name,
             usage=entry.usage.to_dict(),
             finish_reason=entry.finish_reason,
+            prompt_hash=prompt_hash,
             avoided_tokens=avoided_tokens,
             avoided_cost_usd=round(avoided_cost, 8),
             cached=True,
@@ -268,7 +361,7 @@ class Executor:
             # Never cache a response that contains a default secret/PII pattern. The
             # event carries pattern names only, never the matched text or response.
             if self.cache_stats is not None:
-                self.cache_stats.skipped += 1
+                self.cache_stats.record_skip()
             self.trace.emit(
                 "cache.skipped",
                 node=node.id,
@@ -287,10 +380,10 @@ class Executor:
         )
         if self.cache.put(cache_key, entry):
             if self.cache_stats is not None:
-                self.cache_stats.writes += 1
+                self.cache_stats.record_write()
         else:
             if self.cache_stats is not None:
-                self.cache_stats.skipped += 1
+                self.cache_stats.record_skip()
             self.trace.emit("cache.skipped", node=node.id, reason="write-failed")
 
 
@@ -318,10 +411,14 @@ class RouterExecutor:
         node: CompiledNode,
         graph: CompiledGraph,
         state: RuntimeState,
+        *,
+        reservation: Reservation | None = None,
     ) -> RouteDecision:
         prompt = render_prompt(node, graph, state)
         _trace_render(self.executor.trace, node, prompt)
-        response = self.executor.call(node, prompt, temperature=0.0, graph=graph)
+        response = self.executor.call(
+            node, prompt, temperature=0.0, graph=graph, reservation=reservation
+        )
         try:
             decision = self._parse(response.text, node, graph)
         except RuntimeFailure as exc:
@@ -332,7 +429,7 @@ class RouterExecutor:
                 graph,
                 state,
                 repair_note=(
-                    "Invalid router decision. Return JSON with decision, target (to), "
+                    "Invalid router decision. Return JSON with decision, target (to) or routes, "
                     "confidence, and reason. Choose only from the menu."
                 ),
             )
@@ -345,7 +442,11 @@ class RouterExecutor:
                 policy = node.routing.on_low_confidence
                 if policy == "fallback":
                     return RouteDecision(
-                        "fallback", graph.fallback, decision.confidence, decision.reason
+                        "fallback",
+                        graph.fallback,
+                        decision.confidence,
+                        decision.reason,
+                        selection=decision.selection,
                     )
                 if policy == "retry" and self.executor.max_retries > 0:
                     retry = render_prompt(
@@ -396,7 +497,9 @@ class RouterExecutor:
         confidence = data.get("confidence")
         reason = str(data.get("reason") or "").strip()
         note = data.get("note")
-        menu = {edge.to for edge in graph.outgoing(node.id)}
+        selection = node.routing.selection
+        outgoing = graph.outgoing(node.id)
+        menu = {edge.to for edge in outgoing}
 
         # Canonical decision shape, plus the compact route shape emitted by small routers.
         target_value = data.get("route") if "route" in data else data.get("to")
@@ -410,38 +513,157 @@ class RouterExecutor:
             if not isinstance(confidence, (int, float)) or not 0 <= float(confidence) <= 1:
                 confidence = 0.0
             return RouteDecision(
-                "fallback", None, float(confidence), reason or "abstained", None, text
+                "fallback",
+                None,
+                float(confidence),
+                reason or "abstained",
+                None,
+                text,
+                selection=selection.value,
             )
         if action != "route":
             raise RuntimeFailure(
                 "router decision must be route or abstain", details={"code": "MG-2101"}
             )
-        if not isinstance(target, str) or target not in menu:
-            raise RuntimeFailure(
-                f"router target {target!r} is not in the menu",
-                details={"code": "MG-2101"},
-            )
         if not isinstance(confidence, (int, float)) or not 0 <= float(confidence) <= 1:
             raise RuntimeFailure(
                 "router confidence must be between 0 and 1", details={"code": "MG-2101"}
             )
+
+        candidates = _parse_candidates(data.get("routes"), node, menu, float(confidence))
+        chosen: tuple[str, ...]
+        if selection == RoutingSelection.single:
+            if not isinstance(target, str) or target not in menu:
+                raise RuntimeFailure(
+                    f"router target {target!r} is not in the menu",
+                    details={"code": "MG-2101"},
+                )
+            chosen = (target,)
+        elif selection == RoutingSelection.top_k:
+            chosen = _select_top_k(
+                candidates=candidates,
+                target=target,
+                menu=outgoing,
+                k=node.routing.k or 1,
+                default_confidence=float(confidence),
+            )
+        else:  # all
+            if not isinstance(target, str) or target not in menu:
+                raise RuntimeFailure(
+                    f"router target {target!r} is not in the menu",
+                    details={"code": "MG-2101"},
+                )
+            chosen = tuple(
+                edge.to for edge in sorted(outgoing, key=lambda edge: (-edge.priority, edge.to))
+            )
         if not reason or reason == "short reason":
-            reason = f"router selected {target}"
+            reason = f"router selected {', '.join(chosen)}"
         return RouteDecision(
             "route",
-            target,
+            chosen[0] if chosen else target,
             float(confidence),
             reason[:500],
             str(note)[:1000] if note else None,
             text,
+            targets=chosen if selection != RoutingSelection.single else (),
+            selection=selection.value,
         )
+
+
+def _parse_candidates(
+    raw: object,
+    node: CompiledNode,
+    menu: set[str],
+    default_confidence: float,
+) -> list[RouteCandidate]:
+    """Parse an optional ``routes`` ranking from a router decision."""
+
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise RuntimeFailure(
+            f"router {node.id!r} routes must be a list", details={"code": "MG-2101"}
+        )
+    candidates: list[RouteCandidate] = []
+    for item in raw:
+        candidate_target: str | None
+        if isinstance(item, str):
+            candidate_target, confidence = item, default_confidence
+        elif isinstance(item, dict):
+            value = item.get("to") if "to" in item else item.get("target")
+            candidate_target = value if isinstance(value, str) else None
+            score = item.get("confidence", default_confidence)
+            if not isinstance(score, (int, float)) or not 0 <= float(score) <= 1:
+                raise RuntimeFailure(
+                    f"router {node.id!r} route confidence must be between 0 and 1",
+                    details={"code": "MG-2101"},
+                )
+            confidence = float(score)
+        else:
+            raise RuntimeFailure(
+                f"router {node.id!r} route entries must be strings or objects",
+                details={"code": "MG-2101"},
+            )
+        if not candidate_target or candidate_target not in menu:
+            raise RuntimeFailure(
+                f"router target {candidate_target!r} is not in the menu",
+                details={"code": "MG-2101"},
+            )
+        if not any(candidate.to == candidate_target for candidate in candidates):
+            candidates.append(RouteCandidate(candidate_target, confidence))
+    return candidates
+
+
+def _select_top_k(
+    *,
+    candidates: list[RouteCandidate],
+    target: str | None,
+    menu: list[CompiledEdge],
+    k: int,
+    default_confidence: float,
+) -> tuple[str, ...]:
+    """Choose exactly ``k`` routes with documented, stable tie-breaking.
+
+    Ordering is confidence descending, then edge ``priority`` descending, then target ID
+    lexical ascending. Unranked menu routes are appended in that same deterministic menu
+    order until ``k`` slots are filled, so a router that returns fewer than ``k`` ranked
+    routes still activates exactly ``k``. Ties never depend on provider completion order.
+    """
+
+    priority = {edge.to: edge.priority for edge in menu}
+    ordered_menu = sorted(menu, key=lambda edge: (-edge.priority, edge.to))
+    by_target: dict[str, RouteCandidate] = {candidate.to: candidate for candidate in candidates}
+    if target and target not in by_target:
+        by_target[target] = RouteCandidate(target, default_confidence)
+    ranked = sorted(
+        by_target.values(),
+        key=lambda candidate: (
+            -candidate.confidence,
+            -priority.get(candidate.to, 0),
+            candidate.to,
+        ),
+    )
+    chosen = [candidate.to for candidate in ranked]
+    for edge in ordered_menu:
+        if len(chosen) >= k:
+            break
+        if edge.to not in chosen:
+            chosen.append(edge.to)
+    return tuple(chosen[:k])
 
 
 class WorkerExecutor:
     def __init__(self, executor: Executor):
         self.executor = executor
 
-    def run(self, node: CompiledNode, graph: CompiledGraph, state: RuntimeState) -> Execution:
+    def run(
+        self,
+        node: CompiledNode,
+        graph: CompiledGraph,
+        state: RuntimeState,
+        *,
+        reservation: Reservation | None = None,
+    ) -> Execution:
         prompt = render_prompt(node, graph, state)
         _trace_render(self.executor.trace, node, prompt)
         temperature = (
@@ -451,7 +673,9 @@ class WorkerExecutor:
         )
         if temperature is None:
             temperature = 0.2
-        response = self.executor.call(node, prompt, temperature=temperature, graph=graph)
+        response = self.executor.call(
+            node, prompt, temperature=temperature, graph=graph, reservation=reservation
+        )
         try:
             artifacts = parse_artifacts(response.text, node)
         except RuntimeFailure as exc:

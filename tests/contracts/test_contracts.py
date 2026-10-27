@@ -34,6 +34,8 @@ TICKETS = ROOT / ".scratch" / "tickets"
         "run-manifest",
         "dataset",
         "change-set",
+        "registry-index",
+        "registry-eval-report",
     ],
 )
 def test_schemas_are_valid(name: str) -> None:
@@ -97,6 +99,30 @@ def test_schema_snapshot_loads() -> None:
     schema = load_schema("graph")
     assert schema["title"] == "Model Graph"
     assert schema["properties"]["apiVersion"]["const"] == "modelgraph/v0"
+
+
+def test_routing_selection_modes_are_additive_and_k_is_conditional() -> None:
+    from pydantic import ValidationError
+
+    from modelgraph.contracts.graph import RoutingConfig, RoutingSelection
+
+    # Default remains single, so every pre-existing document keeps its behavior.
+    assert RoutingConfig().selection == RoutingSelection.single
+    assert RoutingConfig().k is None
+    assert RoutingConfig(selection="all").selection == RoutingSelection.all
+    assert RoutingConfig(selection="top_k", k=2).k == 2
+
+    with pytest.raises(ValidationError, match="k is required"):
+        RoutingConfig(selection="top_k")
+    with pytest.raises(ValidationError, match="only valid"):
+        RoutingConfig(selection="single", k=2)
+    with pytest.raises(ValidationError, match="only valid"):
+        RoutingConfig(selection="all", k=2)
+
+    example = load_document(EXAMPLES / "ensemble-triage.graph.yaml")
+    assert example["spec"]["nodes"][0]["routing"]["selection"] == "all"
+    assert not validate_document(example, "graph")
+    GraphDocument.model_validate(example)
 
 
 def test_corrupted_example_fails_without_changing_the_committed_fixture() -> None:

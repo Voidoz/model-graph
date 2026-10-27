@@ -54,14 +54,7 @@ def manifest_path(run_dir: str | Path) -> Path:
 
 def usage_snapshot(budget: Budget) -> dict[str, Any]:
     """The usage totals recorded in a manifest (also used by ``RunOutcome``)."""
-    return {
-        "steps": budget.used_steps,
-        "input_tokens": budget.used_input_tokens,
-        "output_tokens": budget.used_output_tokens,
-        "total_tokens": budget.used_tokens,
-        "cost_usd": round(budget.used_cost_usd, 8),
-        "elapsed_seconds": round(budget.elapsed_seconds, 3),
-    }
+    return budget.usage()
 
 
 def deployment_revision(graph: CompiledGraph, *, target: str = "portable") -> str:

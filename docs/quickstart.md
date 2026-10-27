@@ -198,7 +198,7 @@ works offline; without the profile, `auto`/`ollama` uses the configured local mo
 ## What the MVP includes
 
 - YAML/JSON loading with duplicate-key detection.
-- Canonical JSON Schema validation and semantic rules V-01..V-20.
+- Canonical JSON Schema validation and semantic rules V-01..V-22.
 - Model manifests resolved through a local registry, with manifest hashes in the run.
 - Router, worker, joiner, and subgraph execution.
 - Structured route decisions with confidence, fallback, and one repair attempt.
@@ -227,7 +227,6 @@ works offline; without the profile, `auto`/`ollama` uses the configured local mo
 - Canary/shadow, in-flight pinning, and hot swap (`T-0039`).
 - Resident/fused/compiled targets and graph distillation.
 - Adapter submission and specialist/router training recipes.
-- Bounded fan-out/ensemble joins.
 - Provider streaming and tools/code execution.
 - Graph editing and model-swap UX (`T-0046`).
 

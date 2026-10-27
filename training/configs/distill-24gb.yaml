@@ -1,0 +1,103 @@
+# T-0025 offline distillation recipe (24GB student training).
+#
+# STATUS: UNVERIFIED IN THIS REPOSITORY'S DEVELOPMENT ENVIRONMENT.
+# Teacher sampling needs a live teacher provider (network and a license decision); student
+# training needs torch/transformers/PEFT and a 24GB GPU. Neither is available here. The
+# synthetic sibling config (distill-synthetic.yaml) is the runnable rehearsal.
+#
+# Pipeline:
+#   1. Sample the teacher on the domain slice with temperature > 0 and diverse prompts.
+#   2. Filter: deterministic tests where possible, then a judge or human review on the rest.
+#   3. Keep hard/failure cases; drop near-duplicates and empty/short outputs.
+#   4. Train the 3B student with the same LoRA recipe as the 24GB config.
+#   5. Record the teacher id, license, sampling params, filter report, and every dataset hash.
+#
+# Exact commands (on a machine with the stack, teacher endpoint, and network):
+#   uv pip install torch transformers peft datasets accelerate trl
+#   uv run python training/distill.py --config training/configs/distill-24gb.yaml --dry-run
+#   uv run python training/distill.py --config training/configs/distill-24gb.yaml --sample
+#   uv run python training/distill.py --config training/configs/distill-24gb.yaml --train
+schema: modelgraph/specialist-training-config/v0
+name: js-specialist 3B distilled from a 32B teacher (24GB)
+method: distill
+mode: real
+dataset: runs/training/js-specialist-sft
+node: js-specialist
+output_dir: runs/training/js-specialist-distill-24gb
+seed: 20261025
+created_at: "2026-10-25T00:00:00Z"
+notes: >-
+  Teacher calls are network inference; filter and license decisions must be recorded before
+  student training. Unverified here.
+model:
+  id: js-specialist-3b-distill
+  name: JavaScript Specialist 3B (distilled)
+  version: 0.1.0
+  description: >-
+    A 3B student distilled from a larger coding teacher on a filtered JavaScript domain slice.
+  base: Qwen/Qwen2.5-Coder-3B-Instruct
+  base_uri: hf://Qwen/Qwen2.5-Coder-3B-Instruct
+  base_license: apache-2.0
+  provider: llamacpp
+  model: js-specialist-3b-distill
+  context_window: 32768
+  max_output_tokens: 4096
+  capabilities: [chat, seeded]
+  labels:
+    role: worker
+    domain: coding
+    language: javascript
+    hardware: 24gb
+    method: distill
+  resources:
+    vram_gb: 24
+    ram_gb: 32
+    disk_gb: 40
+    cpu_only: false
+    network_access: loopback
+hyperparameters:
+  rank: 32
+  alpha: 64
+  dropout: 0.05
+  learning_rate: 0.0002
+  epochs: 3
+  batch_size: 2
+  gradient_accumulation_steps: 8
+  max_seq_length: 4096
+  quantization: none
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  optimizer: paged_adamw_8bit
+  scheduler: cosine
+  warmup_ratio: 0.03
+  gradient_checkpointing: true
+  notes: Student training. Teacher sampling is inference-only and runs on a separate endpoint.
+hardware:
+  tier: 24gb
+  gpu: NVIDIA RTX 3090 / 4090 / A10G class (24GB)
+  vram_gb: 24
+  cpu_only: false
+  cuda: "12.1+"
+  driver: "535+"
+  notes: Student training on one 24GB GPU; teacher inference is remote or a second machine.
+  expected_data: 2,000-20,000 filtered teacher samples; raw sampling may be 2-4x larger.
+  expected_runtime: Teacher sampling dominates; student LoRA is 4-12 hours for 5,000 samples.
+distillation:
+  teacher: Qwen/Qwen2.5-Coder-32B-Instruct
+  teacher_license: apache-2.0
+  teacher_uri: hf://Qwen/Qwen2.5-Coder-32B-Instruct
+  filter: judge
+  min_bytes: 80
+  include_failures: true
+  notes: >-
+    Filter with deterministic tests first; judge or human review the remainder. Keep failure/
+    recovery examples but record them. Teacher mistakes and license terms pass to the student.
+evaluation:
+  node_suite: evals/mock/js-specialist
+  node_graph: examples/coding-specialist.graph.yaml
+  node: js-specialist
+  graph_suite: evals/e2e/coding-specialist
+  graph_graph: examples/coding-specialist.graph.yaml
+  provider: mock
+  reports_dir: runs/training/js-specialist-distill-24gb/eval/runs
+promotion:
+  require_passing_eval: true

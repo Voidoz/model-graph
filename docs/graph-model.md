@@ -7,9 +7,11 @@ the rules a graph must satisfy before it can run.
 - Schema: [`schemas/graph.schema.json`](../schemas/graph.schema.json)
 - Examples: [`examples/hello-triage.graph.yaml`](../examples/hello-triage.graph.yaml),
   [`examples/coding-specialist.graph.yaml`](../examples/coding-specialist.graph.yaml),
-  [`examples/composed-assistant.graph.yaml`](../examples/composed-assistant.graph.yaml)
+  [`examples/composed-assistant.graph.yaml`](../examples/composed-assistant.graph.yaml),
+  [`examples/ensemble-triage.graph.yaml`](../examples/ensemble-triage.graph.yaml)
 - Decisions: [ADR-0003](adr/0003-four-node-kinds.md), [ADR-0004](adr/0004-typed-artifacts.md),
-  [ADR-0005](adr/0005-compile-time-graph-runtime-routing.md)
+  [ADR-0005](adr/0005-compile-time-graph-runtime-routing.md),
+  [ADR-0014](adr/0014-fanout-selection-and-joins.md)
 
 ## 1. Nodes
 
@@ -26,8 +28,8 @@ contract with the runtime; they are not cosmetic labels.
 ### 1.1 Router
 
 A router is a decider. It receives a scoped view of the request and the menu of its
-outgoing edges, and returns exactly one structured decision: route to a child, or abstain.
-It does not write artifacts and normally does not answer the user.
+outgoing edges, and returns a structured decision: route to one or more children, or
+abstain. It does not write artifacts and normally does not answer the user.
 
 ```yaml
 - id: coding-triage
@@ -36,10 +38,25 @@ It does not write artifacts and normally does not answer the user.
   model: router-small
   reads: [task]
   routing:
+    selection: single            # single | top_k | all
     confidence_threshold: 0.7
-    on_low_confidence: fallback   # error | fallback | retry
+    on_low_confidence: fallback  # error | fallback | retry
     max_retries: 1
 ```
+
+`selection` says how many menu routes one decision activates:
+
+| `selection` | Activates | Requires | Use when |
+| --- | --- | --- | --- |
+| `single` (default) | Exactly the chosen route. | Nothing else. | The ordinary cascade. Behavior is unchanged from v0. |
+| `top_k` | Exactly `k` routes, ranked by the router. | `k` (1..number of outgoing edges). | A small ensemble where the router can rank candidates. |
+| `all` | Every outgoing route in deterministic menu order. | Nothing else. | A fixed ensemble; the router only decides whether to run it. |
+
+`top_k` and `all` are fan-out modes: independent branches may run concurrently and a
+downstream joiner waits for their declared inputs. They are opt-in because fan-out
+multiplies token and cost usage; the runtime's budget pre-flight vetoes a fan-out that
+cannot fit the remaining budget before any branch starts (see
+[execution.md](execution.md#4-budgets)).
 
 Router quality is the system's quality ceiling. A router is not a prompt hack; it is a
 first-class, evaluated, trainable component (see [training.md](training.md#4-router-training)).
@@ -71,9 +88,13 @@ node, which is statically visible and depth-budgeted.
 
 ### 1.3 Joiner
 
-A joiner takes artifacts from several upstream branches and produces one. With v0's
-single-selection routing, a joiner usually has one incoming path at runtime; it becomes
-essential when fan-out/ensemble routing lands ([T-0018](../.scratch/tickets/T-0018-fanout-ensemble.md)).
+A joiner takes artifacts from several upstream branches and produces one. Under
+single-selection routing a joiner usually has one incoming path at runtime; under
+`top_k`/`all` it is the barrier where the selected branches meet. The scheduler runs the
+joiner only after every declared `read` is available, records which branches contributed
+and their token/cost usage, and fails closed with `MG-2201` if a declared input is missing.
+The v0 graph contract has no `allow_partial` option; a partial join is not silently
+accepted. See [execution.md](execution.md#22-fan-out-and-joins).
 
 ```yaml
 - id: merge-answers
@@ -280,6 +301,34 @@ Policy:
    accepts that a router can answer without a specialist; v0 defaults to false and the
    runtime treats a direct answer as a protocol error.
 
+### 5.1 Multi-selection decisions
+
+`single` keeps the decision shape above. For `top_k`, a router may return a ranking:
+
+```json
+{
+  "decision": "route",
+  "routes": [
+    {"to": "js-specialist", "confidence": 0.82},
+    {"to": "generic-coder", "confidence": 0.74}
+  ],
+  "confidence": 0.82,
+  "reason": "A TypeScript task that also needs general review."
+}
+```
+
+The runtime validates every target against the menu and selects exactly `k`. Ordering is
+**deterministic and documented**: confidence descending, then edge `priority` descending,
+then target ID lexical ascending. A router that returns fewer than `k` ranked routes is
+filled from the same deterministic menu order. Router output order alone never decides a
+tie. For `all`, the runtime ignores the chosen subset and activates every outgoing route in
+that menu order; the decision's confidence still drives the confidence threshold and
+`on_low_confidence` policy. Abstain and fallback keep their single-route meaning.
+
+The uncertainty here is honest: a generative router's ranking is a preference signal, not
+a calibrated distribution. Evaluate an ensemble against the best single branch before
+using it ([evaluation.md](evaluation.md)).
+
 The *routing card* is what the router sees about a child. By default it is derived from
 the target node's `description`, edge `when` and `examples`, and model metadata. An
 optional `routing_card` on a node can supply a shorter, hand-tuned card. Cards are part
@@ -324,15 +373,23 @@ fallback: general-coder
 Use when abstention should degrade to a known generalist rather than fail. The fallback
 node is a normal node, reachable in the graph and evaluated with the rest.
 
-### 6.5 Ensemble (designed, not v0)
+### 6.5 Ensemble / fan-out
 
 ```text
 router (selection: top_k) → several workers → joiner
+router (selection: all)   → every worker     → joiner
 ```
 
-The data model supports the topology now; execution lands in
-[T-0018](../.scratch/tickets/T-0018-fanout-ensemble.md). Do not use it in a graph until
-the scheduler supports it; validation warns.
+Use when independent specialists produce useful disagreement or when a joiner can
+synthesize a better answer than one branch. The scheduler activates the selected branches,
+runs them with bounded concurrency, and waits at the joiner for all declared inputs. The
+full worked topology is
+[`examples/ensemble-triage.graph.yaml`](../examples/ensemble-triage.graph.yaml).
+
+Fan-out is not free: `top_k` can multiply cost by roughly `k`, and `all` by the number of
+outgoing routes, before the joiner's own call. The budget veto is mandatory, not advisory;
+a fan-out that cannot fit the remaining budget fails before its branches start. Use fan-out
+only when an eval report shows a quality or cost win over the best single branch.
 
 ## 7. Validation rules
 
@@ -361,6 +418,8 @@ execution; warnings are reported and may be promoted to errors by CI.
 | V-18 | Subgraph references resolve and their input/output maps are complete. | Error (compile) / Warning (offline validate) |
 | V-19 | Budgets are positive; thresholds are in `[0,1]`; node limits do not exceed graph defaults. | Error |
 | V-20 | A joiner has at least one incoming edge (warning if fewer than two outside fan-out mode). | Warning |
+| V-21 | `routing.k` is present exactly when `selection` is `top_k`, and `1 <= k <=` the number of outgoing edges. | Error |
+| V-22 | Every route of a `top_k`/`all` router reaches a joiner; otherwise branch output may be ambiguous. | Warning |
 
 The validator always reports **all** errors it can find, with a JSON path and a human
 explanation, rather than stopping at the first. A graph that cannot be validated cannot

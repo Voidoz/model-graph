@@ -1,10 +1,10 @@
-"""Semantic graph validation (rules V-01..V-20)."""
+"""Semantic graph validation (rules V-01..V-22)."""
 
 from __future__ import annotations
 
 from collections import defaultdict, deque
 
-from modelgraph.contracts.graph import GraphDocument, NodeKind
+from modelgraph.contracts.graph import GraphDocument, NodeKind, RoutingSelection
 from modelgraph.contracts.schema import validate_document
 from modelgraph.errors import Issue
 from modelgraph.registry import Registry
@@ -141,6 +141,45 @@ def validate_graph(
                     issues.append(
                         Issue("MG-1015", "router edge requires a 'when' criterion", node_path)
                     )
+            selection = node.routing.selection if node.routing else RoutingSelection.single
+            if selection == RoutingSelection.top_k:
+                k = node.routing.k if node.routing else None
+                if k is None:
+                    issues.append(
+                        Issue(
+                            "MG-1020",
+                            "routing.k is required when selection is 'top_k'",
+                            f"{node_path}.routing.k",
+                        )
+                    )
+                elif k > len(outgoing):
+                    issues.append(
+                        Issue(
+                            "MG-1020",
+                            f"routing.k ({k}) exceeds the number of routes ({len(outgoing)})",
+                            f"{node_path}.routing.k",
+                        )
+                    )
+            elif node.routing is not None and node.routing.k is not None:
+                issues.append(
+                    Issue(
+                        "MG-1020",
+                        "routing.k is only valid when selection is 'top_k'",
+                        f"{node_path}.routing.k",
+                    )
+                )
+            if selection != RoutingSelection.single:
+                for edge in outgoing:
+                    if not _reachable_joiners(graph, {edge.to}):
+                        issues.append(
+                            Issue(
+                                "MG-1021",
+                                f"fan-out route to {edge.to!r} does not reach a joiner; branch "
+                                "outputs may be ambiguous",
+                                f"{node_path}.routing.selection",
+                                "warning",
+                            )
+                        )
         else:
             for edge in outgoing:
                 target_node = nodes.get(edge.to)
@@ -301,6 +340,29 @@ def validate_graph(
         )
 
     return issues
+
+
+def _reachable_joiners(graph: GraphDocument, starts: set[str]) -> set[str]:
+    """Joiners reachable from ``starts``; traversal stops at the first joiner on a path."""
+
+    nodes = {node.id: node for node in graph.spec.nodes}
+    adjacency: dict[str, list[str]] = defaultdict(list)
+    for edge in graph.spec.edges:
+        adjacency[edge.from_].append(edge.to)
+    found: set[str] = set()
+    seen: set[str] = set()
+    queue = deque(sorted(starts))
+    while queue:
+        node_id = queue.popleft()
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        node = nodes.get(node_id)
+        if node is not None and node.kind == NodeKind.joiner:
+            found.add(node_id)
+            continue
+        queue.extend(adjacency.get(node_id, []))
+    return found
 
 
 def _reachable(graph: GraphDocument) -> set[str]:

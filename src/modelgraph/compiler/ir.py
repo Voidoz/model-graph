@@ -157,7 +157,7 @@ class CompiledGraph:
                     "writes": [
                         write.model_dump(mode="json", exclude_none=True) for write in node.writes
                     ],
-                    "routing": node.routing.model_dump(mode="json"),
+                    "routing": node.routing.model_dump(mode="json", exclude_none=True),
                     "routing_card": node.routing_card,
                     "graph_ref": node.graph_ref,
                     "input_map": node.input_map,

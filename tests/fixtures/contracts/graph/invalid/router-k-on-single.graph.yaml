@@ -1,0 +1,33 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-router-k-on-single
+  name: Fixture Router K On Single
+  version: 1.0.0
+  description: A single-selection router that illegally declares a top-k value.
+spec:
+  entry: triage
+  exit: [answer]
+  nodes:
+    - id: triage
+      kind: router
+      description: Selects one route but also declares k.
+      model: fixture-router
+      reads: [task]
+      routing:
+        selection: single
+        k: 2
+    - id: work
+      kind: worker
+      description: Writes the answer for the graph exit.
+      model: fixture-worker
+      reads: [task]
+      instruction: Answer the request.
+      writes:
+        - name: answer
+          type: text
+  edges:
+    - from: triage
+      to: work
+      when: Always route to the worker.
+      artifact: text

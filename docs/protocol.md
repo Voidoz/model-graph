@@ -399,6 +399,38 @@ Provider temperature for routers defaults to `0` and seeds are pinned when the p
 supports them. Ties are broken by confidence, then edge `priority`, then lexical target
 ID. The resolved decision, including which tie-break applied, is recorded.
 
+### 5.5 Multi-selection (`top_k` and `all`)
+
+A router with `routing.selection: top_k` may return a ranking instead of a single target:
+
+```json
+{
+  "decision": "route",
+  "routes": [
+    {"to": "js-specialist", "confidence": 0.82},
+    {"to": "generic-coder", "confidence": 0.82}
+  ],
+  "confidence": 0.82,
+  "reason": "Both routes fit; run the pair."
+}
+```
+
+Each `routes` entry may also be a bare route ID (its confidence defaults to the decision's
+confidence). Every target must be in the menu; duplicates are ignored. Ordering is
+confidence descending, then edge `priority` descending, then lexical target ID; the first
+`k` are activated and unranked menu routes fill any missing slots in the same menu order.
+`selection: all` still requires a valid route or abstain decision (for threshold and
+fallback policy) but activates every menu route. The decision's `to` is recorded for
+auditability even when the selection mode ignores it.
+
+### 5.6 Join protocol under fan-out
+
+A joiner runs only after all declared `reads` exist and every incoming edge is resolved.
+It records `joiner.inputs` with each input's producer and branch, and `joiner.joined` with
+the contributing branches and their token/cost usage. A missing declared input is
+`MG-2201`; the v0 contract has no partial-join flag. A join that waits past the configured
+deadline is `MG-2105`. See [execution.md §2.2](execution.md#22-fan-out-and-joins).
+
 ## 6. Worker protocol
 
 ### 6.1 Request
@@ -446,7 +478,7 @@ the trace records `joiner.single_input` so authors can see it.
 | Range | Class | Examples |
 | --- | --- | --- |
 | `MG-1xxx` | Validation / configuration | `MG-1001` schema invalid, `MG-1002` cycle, `MG-1003` unresolved model, `MG-1004` unresolved subgraph, `MG-1005` pruning removed the entry or an exit, `MG-1006` missing/unwritten exit artifact |
-| `MG-2xxx` | Runtime / protocol | `MG-2101` invalid router decision, `MG-2102` low confidence, `MG-2201` missing read, `MG-2202` artifact protocol violation, `MG-2203` context overflow, `MG-2301` subgraph mapping error |
+| `MG-2xxx` | Runtime / protocol | `MG-2101` invalid router decision, `MG-2102` low confidence, `MG-2103` missing fallback, `MG-2104` unresolved join, `MG-2105` join timeout, `MG-2201` missing read, `MG-2202` artifact protocol violation, `MG-2203` context overflow, `MG-2301` subgraph mapping error |
 | `MG-3xxx` | Provider / transport | `MG-3001` connection failed, `MG-3002` timeout, `MG-3003` rate limited, `MG-3004` auth failed, `MG-3005` model unavailable, `MG-3006` provider returned malformed response |
 | `MG-4xxx` | Budget / policy | `MG-4001` step budget exhausted, `MG-4002` token budget exhausted, `MG-4003` cost budget exhausted, `MG-4004` wall-clock budget exhausted, `MG-4005` license/policy violation, `MG-4006` depth budget exhausted |
 
@@ -534,6 +566,7 @@ Adapters must:
 | `openai-compatible` | HTTP | Covers hosted APIs and many local servers |
 | `ollama` | HTTP | Easiest local path for contributors |
 | `llama.cpp` server | HTTP | Broad local model support, JSON/grammar options |
+| `trained-router` | In-process | A serialized local router artifact; no network, used by T-0024 |
 
 Adapters are configured by model manifests, not by graph files. A graph is portable
 across providers if its nodes reference models that exist in each registry.

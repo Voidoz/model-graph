@@ -135,7 +135,7 @@
         "hash": {"$ref": "#/$defs/nullableHash"},
         "provider": {
           "type": ["string", "null"],
-          "enum": ["mock", "openai-compatible", "ollama", "llamacpp", "custom", null]
+          "enum": ["mock", "openai-compatible", "ollama", "llamacpp", "custom", "trained-router", null]
         },
         "model": {"type": ["string", "null"], "maxLength": 300},
         "resolved_revision": {"type": ["string", "null"], "maxLength": 200},

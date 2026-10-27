@@ -181,8 +181,11 @@ wall-clock time.
   malformed artifacts get **one** repair attempt. A single executor has a hard cap of eight
   provider calls per node as defense in depth, and the router's configured
   `routing.max_retries` is now respected (0 means no low-confidence retry).
-- The scheduler runs one active branch in v0. A router selects exactly one menu entry; no
-  fan-out amplification is possible.
+- A `selection: single` router activates exactly one menu entry. `top_k`/`all` routers can
+  amplify work, so the scheduler reserves the estimated first-call cost of the whole ready
+  batch atomically and refuses it before any branch starts if it does not fit
+  (`MG-4002`/`MG-4003`). In-flight branch calls are bounded by `max_concurrency` (default
+  4); the step, token, cost, and wall budgets are shared and lock-protected.
 - Untrusted content is size-capped (see §2.1) before it becomes prompt tokens.
 - Profile overrides tighten by default. `--allow-budget-override` can raise a bucket above
   the graph default, but never above the schema-aligned hard ceilings
@@ -196,8 +199,16 @@ wall-clock time.
   overrun the wall-clock limit until the call returns; the runtime fails immediately after.
 - A provider can under-report usage. The runtime charges what is reported and records the
   provider metadata; it cannot audit the vendor.
-- Fan-out/ensemble scheduling is deferred (`T-0018`); when it lands, budget accounting must
-  remain concurrency-safe.
+- Fan-out pre-flight estimates the first call of each branch, not the branch's entire
+  downstream cost. A subgraph branch has no direct call, so its inner scheduler reserves
+  its own entry; the outer batch cannot see inside it. Later calls are still vetoed one at
+  a time by the hard budget; a provider that reports more usage than estimated can overrun
+  the reservation before the next check. Join/wall timeouts are cooperative: an in-flight
+  provider call is allowed to return before the run fails.
+- A branch is not started speculatively. If a later branch cannot fit, the scheduler has
+  still spent the earlier branches' budget unless the whole batch was reserved together;
+  the ready-batch reservation covers the fan-out's first calls, which is the amplification
+  the veto is designed to prevent.
 - The CLI can still be invoked with an operator-supplied huge `--max-tokens`; that is an
   explicit local operator action, not remote input.
 
@@ -258,6 +269,9 @@ the exception in the release notes.
       understood and removed/rotated. Historical local evidence under an ignored `runs/`
       directory is not a release artifact; scan the run directories being shipped.
 - [ ] `make audit` passes, or a documented waiver with issue and expiry exists (§3).
+- [ ] `uv run mg registry verify` passes for every versioned contribution: schema-valid
+      manifest, complete card, passing eval report with matching evidence/graph/suite hashes,
+      weights hash when present, license policy, and a current deterministic index.
 - [ ] No credentials, API keys, private keys, tokens, or real user data are in the repo,
       examples, profiles, manifests, tests, or committed run data.
 - [ ] Every graph and model manifest distributed with the release is reviewed as

@@ -1,0 +1,32 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: fixture-router-top-k-missing-k
+  name: Fixture Router Top K Missing K
+  version: 1.0.0
+  description: A top-k router that does not declare how many routes to activate.
+spec:
+  entry: triage
+  exit: [answer]
+  nodes:
+    - id: triage
+      kind: router
+      description: Selects two routes but omits k.
+      model: fixture-router
+      reads: [task]
+      routing:
+        selection: top_k
+    - id: work
+      kind: worker
+      description: Writes the answer for the graph exit.
+      model: fixture-worker
+      reads: [task]
+      instruction: Answer the request.
+      writes:
+        - name: answer
+          type: text
+  edges:
+    - from: triage
+      to: work
+      when: Always route to the worker.
+      artifact: text

@@ -1,0 +1,93 @@
+# T-0025 8GB QLoRA SFT reference config.
+#
+# STATUS: UNVERIFIED IN THIS REPOSITORY'S DEVELOPMENT ENVIRONMENT.
+# There is no torch/transformers/PEFT stack, CUDA driver, or 8GB GPU here. Do not claim this
+# recipe ran until it is executed on real hardware and the ticket records the evidence.
+#
+# Hardware assumption: one 8GB NVIDIA GPU (RTX 3060 Ti / 4060 class), CUDA 12.1+, driver 535+,
+# 32GB system RAM, ~20GB free disk. Base model download is ~6GB (3B, BF16); the 4-bit adapter
+# run peaks near 7.2-7.8GB VRAM at 2048 tokens with gradient checkpointing.
+#
+# Expected data: 500-5,000 clean SFT examples; examples.jsonl roughly 1-20 MB. Below ~500
+# examples expect overfitting; above ~5,000 you need a larger eval slice to detect a change.
+#
+# Exact commands (after `uv sync` and installing the real stack):
+#   uv pip install torch transformers peft bitsandbytes datasets accelerate trl
+#   uv run python training/sft_lora.py --config training/configs/specialist-8gb-qlora.yaml --dry-run
+#   uv run python training/sft_lora.py --config training/configs/specialist-8gb-qlora.yaml --execute
+#   # then run the T-0025 eval hook against the real serving path; mock eval cannot validate
+#   # the adapter. See docs/training.md §5.5.
+schema: modelgraph/specialist-training-config/v0
+name: js-specialist 3B QLoRA SFT (8GB)
+method: qlora
+mode: real
+dataset: runs/training/js-specialist-sft
+node: js-specialist
+output_dir: runs/training/js-specialist-8gb
+seed: 20261025
+created_at: "2026-10-25T00:00:00Z"
+notes: >-
+  Real-recipe reference. Unverified in this environment; the 8GB hardware claim is a promise
+  that must be tested on real hardware before T-0025 is marked done.
+model:
+  id: js-specialist-3b-lora
+  name: JavaScript Specialist 3B (QLoRA SFT)
+  version: 0.1.0
+  description: >-
+    A QLoRA SFT recipe for a 3B JavaScript/TypeScript specialist trained from a narrow,
+    consented dataset export.
+  base: Qwen/Qwen2.5-Coder-3B-Instruct
+  base_uri: hf://Qwen/Qwen2.5-Coder-3B-Instruct
+  base_license: apache-2.0
+  provider: llamacpp
+  model: js-specialist-3b-lora
+  context_window: 32768
+  max_output_tokens: 4096
+  capabilities: [chat, seeded]
+  labels:
+    role: worker
+    domain: coding
+    language: javascript
+    hardware: 8gb
+  resources:
+    vram_gb: 8
+    ram_gb: 16
+    disk_gb: 20
+    cpu_only: false
+    network_access: loopback
+hyperparameters:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  learning_rate: 0.0002
+  epochs: 3
+  batch_size: 1
+  gradient_accumulation_steps: 16
+  max_seq_length: 2048
+  quantization: 4bit
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  optimizer: paged_adamw_8bit
+  scheduler: cosine
+  warmup_ratio: 0.03
+  gradient_checkpointing: true
+  notes: Effective batch is 16. Keep sequences short; 4096 tokens does not fit at 8GB for 3B.
+hardware:
+  tier: 8gb
+  gpu: NVIDIA RTX 3060 Ti / 4060 class (8GB)
+  vram_gb: 8
+  cpu_only: false
+  cuda: "12.1+"
+  driver: "535+"
+  notes: Single GPU, no multi-GPU or CPU offload.
+  expected_data: 500-5,000 SFT examples; examples.jsonl ~1-20 MB.
+  expected_runtime: About 1-4 hours for 1,000 examples at 3 epochs (estimate, not measured).
+evaluation:
+  node_suite: evals/mock/js-specialist
+  node_graph: examples/coding-specialist.graph.yaml
+  node: js-specialist
+  graph_suite: evals/e2e/coding-specialist
+  graph_graph: examples/coding-specialist.graph.yaml
+  provider: mock
+  reports_dir: runs/training/js-specialist-8gb/eval/runs
+promotion:
+  require_passing_eval: true

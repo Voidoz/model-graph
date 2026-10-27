@@ -1,0 +1,61 @@
+# Reference router-training config (T-0024).
+#
+# Run from the repository root:
+#   UV_CACHE_DIR=$PWD/.uv-cache UV_PYTHON_INSTALL_DIR=$PWD/.uv-python \
+#     uv run python training/scripts/build_demo_dataset.py --seed 20261025 --count 200 --force
+#   UV_CACHE_DIR=$PWD/.uv-cache UV_PYTHON_INSTALL_DIR=$PWD/.uv-python \
+#     uv run mg train router --config training/configs/router-triage.yaml
+#
+# Paths are relative to the current working directory, so run this from the repo root.
+schema: modelgraph/router-training-config/v0
+dataset: runs/training/router-dataset
+artifact: runs/training/router-triage/artifact.json
+report: runs/training/router-triage/report.md
+seed: 20261025
+notes: >-
+  Synthetic hello-triage fixture. This is a mechanics/calibration recipe, not a claim about a
+  real deployed router or end-to-end quality.
+
+features:
+  dimension: 512
+  bigrams: true
+
+training:
+  epochs: 40
+  learning_rate: 0.03
+  l2: 0.001
+  optimizer: adam
+  class_weight: balanced
+  include_ambiguous: false
+
+calibration:
+  method: temperature
+  bins: 10
+  fit_split: validation
+
+abstain:
+  fit_split: validation
+  steps: 100
+  cost_matrix:
+    correct_route: 0.0
+    misroute: 1.0
+    unnecessary_abstain: 0.35
+    misroute_ambiguous: 0.6
+    correct_abstain: 0.0
+  notes: >-
+    hello-triage has a coding fallback, so abstaining is not a hard failure; it still costs
+    more than a correct route and less than a clear misroute. Change unnecessary_abstain to a
+    high value for a graph with no fallback.
+
+evaluation:
+  require_all_splits: true
+  require_frozen_test: true
+
+rules:
+  min_score: 1.0
+  ambiguity_margin: 0.12
+  confidence_floor: 0.2
+  confidence_ceiling: 0.95
+  keywords:
+    coding: [code, coding, program, function, debug, error, api, sql, database, compiler, algorithm, tests, refactor]
+    story: [story, stories, poem, poetry, tale, fiction, narrative, character, dragon, fairy, wizard, scene, novel]

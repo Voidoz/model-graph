@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import typer
+import yaml
 
 from modelgraph import __version__
 from modelgraph.compiler import compile_graph
@@ -45,6 +46,13 @@ from modelgraph.pruning import (
     resolve_profile_path,
 )
 from modelgraph.registry import Registry, default_registry
+from modelgraph.registry_store import (
+    add_contribution,
+    default_registry_root,
+    inspect_entry,
+    list_entries,
+    verify_registry,
+)
 from modelgraph.revision import (
     ChangeSetError,
     RevisionStore,
@@ -68,7 +76,7 @@ from modelgraph.revision import (
 )
 from modelgraph.runtime.budget import Budget
 from modelgraph.runtime.cache import CACHE_MODES, ResponseCache
-from modelgraph.runtime.engine import run_graph
+from modelgraph.runtime.engine import DEFAULT_MAX_CONCURRENCY, run_graph
 from modelgraph.runtime.manifest import read_run_manifest, recover_interrupted_runs
 from modelgraph.runtime.replay import replay_run
 from modelgraph.runtime.trace import read_events
@@ -92,14 +100,24 @@ data_app = typer.Typer(
     help="Export recorded traces into consented, redacted training datasets.",
     no_args_is_help=True,
 )
+training_app = typer.Typer(
+    help="Build router datasets, train/calibrate a router, and rehearse specialist training.",
+    no_args_is_help=True,
+)
+registry_app = typer.Typer(
+    help="Add, list, inspect, and verify versioned model contributions.",
+    no_args_is_help=True,
+)
 graph_app = typer.Typer(help="Compare graph revisions and deployments.", no_args_is_help=True)
 swap_app = typer.Typer(help="Propose model swaps as candidate change sets.", no_args_is_help=True)
 change_app = typer.Typer(help="List, show, and explain change sets.", no_args_is_help=True)
 app.add_typer(trace_app, name="trace")
 app.add_typer(runs_app, name="runs")
 app.add_typer(models_app, name="models")
+app.add_typer(registry_app, name="registry")
 app.add_typer(eval_app, name="eval")
 app.add_typer(data_app, name="data")
+app.add_typer(training_app, name="train")
 app.add_typer(graph_app, name="graph")
 app.add_typer(swap_app, name="swap")
 app.add_typer(change_app, name="change")
@@ -168,7 +186,9 @@ def eval_routing(
     suite: Path = typer.Option(..., "--suite", help="Routing suite directory or suite.yaml."),
     graph: Path | None = typer.Option(None, "--graph", help="Override the suite target graph."),
     provider_name: str | None = typer.Option(
-        None, "--provider", help="mock, auto, ollama, or openai-compatible."
+        None,
+        "--provider",
+        help="mock, trained-router, auto, ollama, or openai-compatible.",
     ),
     live: bool = typer.Option(
         False, "--live", help="Allow a live provider (same as MG_EVAL_LIVE=1)."
@@ -685,6 +705,448 @@ def data_export(
     typer.echo(f"contamination: {contamination['status']} (excluded={contamination['excluded']})")
 
 
+@training_app.command("dataset")
+def train_dataset(
+    dataset: Path = typer.Option(..., "--dataset", help="T-0023 dataset directory or JSONL file."),
+    out: Path = typer.Option(..., "--out", help="Output directory for router examples + summary."),
+    strict_labels: bool = typer.Option(
+        False, "--strict-labels", help="Fail instead of excluding routing examples without a label."
+    ),
+    allow_unrendered: bool = typer.Option(
+        False, "--allow-unrendered", help="Allow examples whose rendered prompt was not captured."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable summary."),
+) -> None:
+    """Build router examples from a T-0023 dataset export."""
+    from modelgraph.training.dataset import load_router_dataset
+
+    try:
+        loaded = load_router_dataset(
+            dataset, strict_labels=strict_labels, allow_unrendered=allow_unrendered
+        )
+        destination = loaded.write(out)
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    payload = {
+        "dataset": loaded.summary["dataset"],
+        "examples": loaded.summary["examples"],
+        "counts": loaded.summary["counts"],
+        "class_balance": loaded.summary["class_balance"],
+        "per_route": loaded.summary["per_route"],
+        "excluded": loaded.summary["excluded"],
+        "output": str(destination),
+        "examples_file": str(destination / "router-examples.jsonl"),
+        "summary_file": str(destination / "router-dataset.json"),
+    }
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    typer.echo(f"router dataset: {destination}")
+    typer.echo("examples: " + ", ".join(f"{name}={count}" for name, count in loaded.counts.items()))
+    typer.echo(
+        "classes: "
+        + ", ".join(f"{name}={count}" for name, count in loaded.summary["per_route"].items())
+    )
+    typer.echo(f"excluded: {loaded.summary['excluded']}")
+    typer.echo(f"summary: {destination / 'router-dataset.json'}")
+
+
+@training_app.command("router")
+def train_router_command(
+    config: Path = typer.Option(..., "--config", help="Router training config YAML."),
+    dataset: Path | None = typer.Option(None, "--dataset", help="Override config dataset path."),
+    artifact: Path | None = typer.Option(None, "--artifact", help="Override artifact output path."),
+    report: Path | None = typer.Option(None, "--report", help="Override Markdown report path."),
+    write: bool = typer.Option(
+        True, "--write/--no-write", help="Write the artifact and report (default: write)."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable summary."),
+) -> None:
+    """Train and calibrate a router, then emit an artifact and report."""
+    from modelgraph.training.config import load_training_config
+    from modelgraph.training.dataset import load_router_dataset
+    from modelgraph.training.model import train_router
+
+    try:
+        loaded_config = load_training_config(config)
+        updates: dict[str, Any] = {}
+        if dataset is not None:
+            updates["dataset"] = str(dataset)
+        if artifact is not None:
+            updates["artifact"] = str(artifact)
+        if report is not None:
+            updates["report"] = str(report)
+        if updates:
+            loaded_config = loaded_config.model_copy(update=updates)
+        training_data = load_router_dataset(loaded_config.dataset)
+        command = (
+            f"mg train router --config {config}"
+            + (f" --dataset {dataset}" if dataset is not None else "")
+            + (f" --artifact {artifact}" if artifact is not None else "")
+            + (f" --report {report}" if report is not None else "")
+        )
+        result = train_router(training_data, loaded_config, command=command, write=write)
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    payload = {
+        "artifact": str(result.artifact_path) if result.artifact_path else None,
+        "artifact_sha256": result.predictor.artifact.sha256(),
+        "artifact_schema": result.artifact["schema"],
+        "report": str(result.report_path) if result.report_path else None,
+        "seed": loaded_config.seed,
+        "classes": result.artifact["classes"],
+        "calibration": result.report["calibration"],
+        "abstain": result.report["abstain"],
+        "counts": result.dataset.counts,
+        "metrics": result.report["metrics"],
+        "recommendation": result.report["recommendation"],
+        "limitations": result.report["limitations"],
+    }
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    typer.echo(f"artifact:  {result.artifact_path}")
+    typer.echo(f"sha256:    {result.predictor.artifact.sha256()}")
+    typer.echo(f"report:    {result.report_path}")
+    typer.echo(
+        f"temperature: {result.report['calibration']['temperature']:.3f} "
+        f"(fit on {result.report['calibration']['fit_split']})"
+    )
+    typer.echo(
+        f"abstain threshold: {result.report['abstain']['threshold']:.3f} (fit on validation)"
+    )
+    for split in ("validation", "test"):
+        trained = result.report["metrics"]["trained"].get(split, {})
+        typer.echo(
+            f"{split}: agreement={trained.get('oracle_agreement')} "
+            f"coverage={trained.get('coverage')} ece={trained.get('ece')} "
+            f"cost/case={trained.get('expected_cost_per_case')}"
+        )
+
+
+@training_app.command("specialist")
+def train_specialist_command(
+    config: Path = typer.Option(..., "--config", help="Specialist training config YAML."),
+    dataset: Path | None = typer.Option(None, "--dataset", help="Override config dataset path."),
+    output: Path | None = typer.Option(None, "--output", help="Override output directory."),
+    node: str | None = typer.Option(None, "--node", help="Override the source node filter."),
+    seed: int | None = typer.Option(None, "--seed", help="Override the training seed."),
+    run_eval: bool = typer.Option(
+        True,
+        "--eval/--no-eval",
+        help="Run the offline node-suite + graph-regression hook (default: run).",
+    ),
+    eval_report: Path | None = typer.Option(
+        None,
+        "--eval-report",
+        help="Use a supplied passing registry eval report instead of running the hook.",
+    ),
+    promote: bool = typer.Option(
+        False,
+        "--promote",
+        help="Require a passing eval report and mark a real artifact promoted (refused for rehearsals).",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable summary."),
+) -> None:
+    """Run the deterministic specialist rehearsal: artifact, manifest, card, eval, repro."""
+    from modelgraph.training.specialist import load_specialist_config, train_specialist
+
+    try:
+        loaded_config = load_specialist_config(config)
+        updates: dict[str, Any] = {}
+        if dataset is not None:
+            updates["dataset"] = str(dataset)
+        if output is not None:
+            updates["output_dir"] = str(output)
+        if node is not None:
+            updates["node"] = node
+        if seed is not None:
+            updates["seed"] = seed
+        if updates:
+            loaded_config = loaded_config.model_copy(update=updates)
+        command_parts = [f"mg train specialist --config {config}"]
+        if dataset is not None:
+            command_parts.append(f"--dataset {dataset}")
+        if output is not None:
+            command_parts.append(f"--output {output}")
+        if node is not None:
+            command_parts.append(f"--node {node}")
+        if seed is not None:
+            command_parts.append(f"--seed {seed}")
+        if promote:
+            command_parts.append("--promote")
+        result = train_specialist(
+            loaded_config,
+            run_eval=run_eval,
+            eval_report_path=eval_report,
+            promote=promote,
+            command=" ".join(command_parts),
+        )
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    payload = result.summary()
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    typer.echo(f"model:     {payload['model']} ({payload['status']})")
+    typer.echo(f"artifact:  {payload['artifact']}")
+    typer.echo(f"sha256:    {payload['artifact_sha256']}")
+    typer.echo(f"manifest:  {payload['manifest']}")
+    typer.echo(f"card:      {payload['card']}")
+    typer.echo(f"repro:     {payload['reproducibility']}")
+    typer.echo(f"eval:      {payload['eval_report'] or 'not run'}")
+    dataset_info = payload["dataset"]
+    typer.echo(
+        f"dataset:   {dataset_info['id']}@{dataset_info['version']} "
+        f"({dataset_info['hash']}) license={dataset_info['license']}"
+    )
+    typer.echo(f"splits:    {dataset_info['counts']}")
+    typer.echo(f"excluded:  {dataset_info['excluded']}")
+    if payload["eval_passed"] is not None:
+        typer.echo(f"gate:      {'PASS' if payload['eval_passed'] else 'FAIL'}")
+    typer.echo("quality:   not claimed (synthetic rehearsal)")
+
+
+# --------------------------------------------------------------------------------------
+# Registry (T-0026)
+# --------------------------------------------------------------------------------------
+
+
+def _registry_profile(profile: str | None) -> Any | None:
+    if profile is None:
+        return None
+    return load_profile(profile)
+
+
+@registry_app.command("add")
+def registry_add_command(
+    path: Path = typer.Argument(..., help="Contribution directory or manifest file."),
+    root: Path = typer.Option(
+        default_registry_root(), "--root", help="Versioned registry root (default: registry/)."
+    ),
+    manifest: Path | None = typer.Option(None, "--manifest", help="Override manifest path."),
+    card: Path | None = typer.Option(None, "--card", help="Override card.md path."),
+    report: Path | None = typer.Option(None, "--report", help="Override eval-report.json path."),
+    profile: str | None = typer.Option(None, "--profile", help="License policy profile."),
+    license_policy: str = typer.Option(
+        "distributable",
+        "--license-policy",
+        help="distributable (default) or local.",
+    ),
+    allow_unknown_license: bool = typer.Option(
+        False, "--allow-unknown-license", help="Explicitly allow an unknown license declaration."
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Add a verified contribution: manifest, card, eval report, and evidence."""
+    try:
+        entry, changed = add_contribution(
+            root,
+            path,
+            manifest_path=manifest,
+            card_path=card,
+            report_path=report,
+            profile=_registry_profile(profile),
+            allow_unknown=allow_unknown_license,
+            policy=license_policy,
+        )
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    payload = {
+        "model": entry.ref,
+        "path": str(entry.path),
+        "changed": changed,
+        "hashes": entry.hashes,
+        "warnings": entry.warnings,
+    }
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    typer.echo(f"{'added' if changed else 'already present'}: {entry.ref}")
+    typer.echo(f"path:    {entry.path}")
+    typer.echo(f"hashes:  {entry.hashes}")
+    for warning in entry.warnings:
+        typer.echo(f"warning: {warning}", err=True)
+
+
+@registry_app.command("list")
+def registry_list_command(
+    root: Path = typer.Option(default_registry_root(), "--root"),
+    profile: str | None = typer.Option(None, "--profile", help="License policy profile."),
+    license_policy: str = typer.Option("distributable", "--license-policy"),
+    allow_unknown_license: bool = typer.Option(False, "--allow-unknown-license"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List versioned registry entries."""
+    try:
+        entries = list_entries(
+            root,
+            profile=_registry_profile(profile),
+            allow_unknown=allow_unknown_license,
+            policy=license_policy,
+        )
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    rows = [
+        {
+            "id": entry.model_id,
+            "version": entry.version,
+            "provider": entry.manifest.get("spec", {}).get("provider"),
+            "license": entry.manifest.get("spec", {}).get("license", {}).get("name"),
+            "passed": entry.passed,
+            "warnings": entry.warnings,
+            "errors": entry.errors,
+            "path": str(entry.path),
+        }
+        for entry in entries
+    ]
+    if as_json:
+        typer.echo(json.dumps(rows, indent=2, ensure_ascii=False))
+        return
+    if not rows:
+        typer.echo("no versioned registry entries")
+        typer.echo("flat starter manifests under registry/models/*.yaml still resolve at runtime")
+        return
+    for row in rows:
+        status = "ok" if row["passed"] else "FAIL"
+        typer.echo(
+            f"{row['id']}@{row['version']:<10} {row['provider']:<18} {row['license']:<14} {status}"
+        )
+        for error in row["errors"]:
+            typer.echo(f"  error: {error}", err=True)
+
+
+@registry_app.command("inspect")
+def registry_inspect_command(
+    ref: str = typer.Argument(..., help="ID or ID@VERSION."),
+    root: Path = typer.Option(default_registry_root(), "--root"),
+    profile: str | None = typer.Option(None, "--profile", help="License policy profile."),
+    license_policy: str = typer.Option("distributable", "--license-policy"),
+    allow_unknown_license: bool = typer.Option(False, "--allow-unknown-license"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Inspect one versioned entry: manifest, card, report, and hashes."""
+    try:
+        entry = inspect_entry(
+            root,
+            ref,
+            profile=_registry_profile(profile),
+            allow_unknown=allow_unknown_license,
+            policy=license_policy,
+        )
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=3) from exc
+    payload = {
+        "model": entry.ref,
+        "path": str(entry.path),
+        "manifest": entry.manifest,
+        "card": entry.card,
+        "eval_report": entry.report,
+        "hashes": entry.hashes,
+        "passed": entry.passed,
+        "errors": entry.errors,
+        "warnings": entry.warnings,
+    }
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    typer.echo(yaml.safe_dump(entry.manifest, sort_keys=False, allow_unicode=True))
+    typer.echo(f"path:    {entry.path}")
+    typer.echo(f"hashes:  {entry.hashes}")
+    typer.echo(f"passed:  {entry.passed}")
+    for warning in entry.warnings:
+        typer.echo(f"warning: {warning}", err=True)
+    for error in entry.errors:
+        typer.echo(f"error:   {error}", err=True)
+    typer.echo("")
+    typer.echo(entry.card)
+    typer.echo("")
+    typer.echo("Eval evidence:")
+    typer.echo(json.dumps(entry.report.get("evidence") or {}, indent=2, sort_keys=True))
+
+
+@registry_app.command("verify")
+def registry_verify_command(
+    root: Path = typer.Option(default_registry_root(), "--root"),
+    profile: str | None = typer.Option(None, "--profile", help="License policy profile."),
+    license_policy: str = typer.Option(
+        "distributable",
+        "--license-policy",
+        help="distributable (default) rejects unknown licenses; local permits them.",
+    ),
+    allow_unknown_license: bool = typer.Option(False, "--allow-unknown-license"),
+    write_index: bool = typer.Option(
+        False,
+        "--write-index",
+        help="Write/refresh the deterministic index.yaml after a clean check.",
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Verify manifests, cards, reports, evidence hashes, licenses, and the index."""
+    try:
+        selected_profile = _registry_profile(profile)
+        result = verify_registry(
+            root,
+            profile=selected_profile,
+            allow_unknown=allow_unknown_license,
+            policy=license_policy,
+            write_index=write_index,
+        )
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=1) from exc
+    payload = {
+        "root": str(result.root),
+        "passed": result.passed,
+        "index": str(result.index_path),
+        "content_hash": result.index_document.get("content_hash"),
+        "index_current": result.index_current,
+        "entries": [
+            {
+                "model": entry.ref,
+                "passed": entry.passed,
+                "hashes": entry.hashes,
+                "warnings": entry.warnings,
+                "errors": entry.errors,
+            }
+            for entry in result.entries
+        ],
+        "errors": result.errors,
+        "warnings": result.warnings,
+    }
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        for entry in result.entries:
+            typer.echo(f"{entry.ref}: {'ok' if entry.passed else 'FAIL'}")
+            for warning in entry.warnings:
+                typer.echo(f"  warning: {warning}", err=True)
+            for error in entry.errors:
+                typer.echo(f"  error: {error}", err=True)
+        typer.echo(f"index: {result.index_path} ({payload['content_hash']})")
+        if result.index_current:
+            typer.echo("index: current")
+        elif write_index and result.passed:
+            typer.echo("index: written")
+        else:
+            typer.echo("index: stale/missing (run --write-index after fixing entries)")
+        if result.passed:
+            typer.echo("registry: OK")
+        else:
+            typer.echo("registry: FAILED", err=True)
+    if not result.passed:
+        raise typer.Exit(code=1)
+
+
+# --------------------------------------------------------------------------------------
+
+
 @app.command()
 def validate(
     graphs: list[Path] = typer.Argument(..., help="Graph YAML file(s)."),
@@ -798,6 +1260,17 @@ def run(
         "--allow-budget-override",
         help="Allow a profile to raise graph budget defaults.",
     ),
+    max_concurrency: int = typer.Option(
+        DEFAULT_MAX_CONCURRENCY,
+        "--max-concurrency",
+        min=1,
+        help="Maximum independent fan-out branches in flight at once.",
+    ),
+    join_timeout: float | None = typer.Option(
+        None,
+        "--join-timeout",
+        help="Seconds a joiner may wait for declared inputs before failing (default: wall budget).",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """Compile and run a graph, writing a trace and run manifest."""
@@ -879,6 +1352,8 @@ def run(
             cache=response_cache,
             logger=log,
             span_exporter=span_exporter,
+            max_concurrency=max_concurrency,
+            join_timeout_seconds=join_timeout,
         )
         if outcome.run_dir is not None and outcome.manifest is not None:
             annotate_run_trace(outcome.run_dir, outcome.manifest)
@@ -915,6 +1390,17 @@ def run(
             f"avoided_tokens={cache_info.get('avoided_tokens', 0)} "
             f"avoided_cost=${cache_info.get('avoided_cost_usd', 0.0):.6f}"
         )
+        for branch in outcome.branches:
+            if branch.get("kind") == "root":
+                continue
+            typer.echo(
+                "branch:   "
+                f"{branch.get('branch_id')} "
+                f"outcome={branch.get('outcome')} "
+                f"tokens={branch.get('total_tokens')} "
+                f"cost=${branch.get('cost_usd', 0.0):.6f}"
+                f"{' contributed' if branch.get('contributed') else ''}"
+            )
         for entry in outcome.path:
             transition = f" -> {entry.to}" if entry.to else ""
             decision = f" {entry.decision}" if entry.decision else ""

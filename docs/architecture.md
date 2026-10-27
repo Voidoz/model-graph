@@ -115,8 +115,9 @@ can be reproduced from the IR plus pinned manifests.
 
 ### 2.3 Execution engine
 
-- **Scheduler** walks the graph one node at a time in v0. It is written as a frontier so
-  fan-out can be added without rewriting it ([T-0018](../.scratch/tickets/T-0018-fanout-ensemble.md)).
+- **Scheduler** walks single-selection graphs one node at a time, and executes
+  `top_k`/`all` fan-out graphs as a node dependency DAG on a bounded thread pool
+  ([T-0018](../.scratch/tickets/T-0018-fanout-ensemble.md), [ADR-0014](adr/0014-fanout-selection-and-joins.md)).
 - **Envelope** is the request-scoped state: inputs, artifacts, budget, path, and
   provenance. It is *not* the full prompt; each node gets a scoped render of it.
 - **Executors** are separate for router, worker, joiner, and subgraph because their
@@ -172,8 +173,12 @@ promotion is atomic and rollback is a pointer switch. See [iteration.md](iterati
 A local-first directory of model manifests, keyed by `id@version`. It resolves a graph's
 model references, provides routing metadata (cost, latency, context), and enforces
 license and resource filters. It never stores weights; it stores pointers, hashes, and
-provenance. A registry may be a directory in the repo, a user-level cache, or a future
-remote index ([T-0026](../.scratch/tickets/T-0026-model-registry.md)).
+provenance. The v0 layout adds versioned contributions
+(`registry/models/<id>/<version>/manifest.yaml`, card, eval report) and a deterministic
+content-hashed index; the legacy flat `registry/models/*.yaml` layout still resolves. A
+remote registry remains future work
+([T-0026](../.scratch/tickets/T-0026-model-registry.md)); see
+[`registry/README.md`](../registry/README.md).
 
 ### 2.6 Evaluation and training
 
@@ -399,6 +404,7 @@ for independent contributors to target than a plugin free-for-all.
 | [0011](adr/0011-gpu-resident-backends.md) | GPU-resident execution as an optional backend; logical semantics unchanged. | Accepted |
 | [0012](adr/0012-compiled-deployment-targets.md) | Graphs compile to deployment targets, including a distilled single model. | Accepted |
 | [0013](adr/0013-immutable-deployment-revisions.md) | Swaps are immutable deployment revisions with explicit invalidation. | Accepted |
+| [0014](adr/0014-fanout-selection-and-joins.md) | Multi-route selection, bounded fan-out, and fail-closed joins. | Accepted |
 
 Open questions that would change this architecture are tracked in
 [`../.scratch/ideas/open-questions.md`](../.scratch/ideas/open-questions.md).

@@ -20,6 +20,8 @@ SCHEMA_FILES = {
     "run-manifest": "run-manifest.schema.json",
     "dataset": "dataset.schema.json",
     "change-set": "change-set.schema.json",
+    "registry-index": "registry-index.schema.json",
+    "registry-eval-report": "registry-eval-report.schema.json",
 }
 
 

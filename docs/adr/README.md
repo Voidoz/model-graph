@@ -23,6 +23,7 @@ considered**, **Follow-ups**.
 | [0011](0011-gpu-resident-backends.md) | GPU-resident execution as an optional backend | Accepted | 2026-10-22 |
 | [0012](0012-compiled-deployment-targets.md) | Graphs compile to deployment targets, including a distilled single model | Accepted | 2026-10-22 |
 | [0013](0013-immutable-deployment-revisions.md) | Swaps are immutable deployment revisions with explicit invalidation | Accepted | 2026-10-22 |
+| [0014](0014-fanout-selection-and-joins.md) | Multi-route selection, bounded fan-out, and fail-closed joins | Accepted | 2026-10-25 |
 
 ## Proposed or open
 

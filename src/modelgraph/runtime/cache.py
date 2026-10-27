@@ -30,6 +30,7 @@ import contextlib
 import json
 import os
 import tempfile
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -141,7 +142,11 @@ class CacheEntry:
 
 @dataclass
 class CacheStats:
-    """Per-run cache accounting; never shared between runs by the runtime."""
+    """Per-run cache accounting; never shared between runs by the runtime.
+
+    Fan-out branches run concurrently, so every mutation takes this lock. Readers that
+    need all counters at once use :meth:`to_dict`, which also takes it.
+    """
 
     hits: int = 0
     misses: int = 0
@@ -149,16 +154,36 @@ class CacheStats:
     skipped: int = 0
     avoided_tokens: int = 0
     avoided_cost_usd: float = 0.0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+    def record_hit(self, *, tokens: int, cost_usd: float) -> None:
+        with self._lock:
+            self.hits += 1
+            self.avoided_tokens += tokens
+            self.avoided_cost_usd += cost_usd
+
+    def record_miss(self) -> None:
+        with self._lock:
+            self.misses += 1
+
+    def record_write(self) -> None:
+        with self._lock:
+            self.writes += 1
+
+    def record_skip(self) -> None:
+        with self._lock:
+            self.skipped += 1
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "hits": self.hits,
-            "misses": self.misses,
-            "writes": self.writes,
-            "skipped": self.skipped,
-            "avoided_tokens": self.avoided_tokens,
-            "avoided_cost_usd": round(self.avoided_cost_usd, 8),
-        }
+        with self._lock:
+            return {
+                "hits": self.hits,
+                "misses": self.misses,
+                "writes": self.writes,
+                "skipped": self.skipped,
+                "avoided_tokens": self.avoided_tokens,
+                "avoided_cost_usd": round(self.avoided_cost_usd, 8),
+            }
 
 
 class ResponseCache:

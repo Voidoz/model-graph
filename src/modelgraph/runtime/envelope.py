@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -35,6 +37,7 @@ class RuntimeState:
     notes: list[Note] = field(default_factory=list)
     path: list[PathEntry] = field(default_factory=list)
     step: int = 0
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False, compare=False)
 
     @classmethod
     def create(
@@ -73,9 +76,9 @@ class RuntimeState:
         return state
 
     def scoped(self, node: CompiledNode) -> list[Artifact]:
-        latest: dict[str, Artifact] = {}
-        for item in [*self.inputs, *self.artifacts]:
-            latest[item.name] = item
+        with self._lock:
+            artifacts = [*self.inputs, *self.artifacts]
+        latest = _latest_by_name(artifacts, self.graph)
         selected: list[Artifact] = []
         for name in node.reads:
             found = latest.get(name)
@@ -106,29 +109,30 @@ class RuntimeState:
             media_type=media_type,
             metadata=metadata,
         )
-        self.artifacts.append(artifact)
+        with self._lock:
+            self.artifacts.append(artifact)
         return artifact
 
     def note(self, producer: str, content: str) -> None:
         if content.strip():
-            self.notes.append(
-                Note(producer=producer, content=content.strip(), created_at=utc_now())
-            )
+            with self._lock:
+                self.notes.append(
+                    Note(producer=producer, content=content.strip(), created_at=utc_now())
+                )
 
     def add_path(self, entry: PathEntry) -> None:
-        self.path.append(entry)
+        with self._lock:
+            self.path.append(entry)
 
     def latest_artifact(self, name: str) -> Artifact | None:
-        latest: Artifact | None = None
-        for artifact in [*self.inputs, *self.artifacts]:
-            if artifact.name == name:
-                latest = artifact
-        return latest
+        with self._lock:
+            artifacts = [*self.inputs, *self.artifacts]
+        return _latest_by_name(artifacts, self.graph).get(name)
 
     def results(self) -> list[Artifact]:
-        latest: dict[str, Artifact] = {}
-        for item in [*self.inputs, *self.artifacts]:
-            latest[item.name] = item
+        with self._lock:
+            artifacts = [*self.inputs, *self.artifacts]
+        latest = _latest_by_name(artifacts, self.graph)
         result: list[Artifact] = []
         for name in self.graph.exits:
             found = latest.get(name)
@@ -140,6 +144,21 @@ class RuntimeState:
                 )
             result.append(found)
         return result
+
+    def ordered_artifacts(self) -> list[Artifact]:
+        """Artifacts in deterministic producer order, not thread completion order."""
+
+        ranks = _node_ranks(self.graph)
+        with self._lock:
+            artifacts = list(self.artifacts)
+        # ``sorted`` is stable, so multiple writes by one producer keep their write order.
+        return sorted(
+            artifacts,
+            key=lambda artifact: (
+                ranks.get(artifact.producer, len(ranks)),
+                artifact.producer,
+            ),
+        )
 
     def envelope(self) -> Envelope:
         return Envelope(
@@ -160,9 +179,49 @@ class RuntimeState:
             ),
             request=Request(task=self.task),
             inputs=self.inputs,
-            artifacts=self.artifacts,
+            artifacts=self.ordered_artifacts(),
             notes=self.notes,
         )
+
+
+def _latest_by_name(artifacts: list[Artifact], graph: CompiledGraph) -> dict[str, Artifact]:
+    """Pick the latest artifact by deterministic producer rank, not completion order.
+
+    Within one producer the last write wins, preserving repair/overwrite semantics. Across
+    concurrent producers the topologically later producer wins, so an exit artifact with
+    more than one writer cannot depend on which branch happened to finish first.
+    """
+
+    ranks = _node_ranks(graph)
+    latest: dict[str, Artifact] = {}
+    for item in artifacts:
+        current = latest.get(item.name)
+        if current is None or ranks.get(item.producer, -1) >= ranks.get(current.producer, -1):
+            latest[item.name] = item
+    return latest
+
+
+def _node_ranks(graph: CompiledGraph) -> dict[str, int]:
+    """Topological producer order, tie-broken by node id (deterministic under fan-out)."""
+
+    node_ids = sorted(graph.nodes)
+    indegree = {node_id: 0 for node_id in node_ids}
+    adjacency: dict[str, list[str]] = defaultdict(list)
+    for edge in graph.edges:
+        adjacency[edge.from_].append(edge.to)
+        indegree[edge.to] = indegree.get(edge.to, 0) + 1
+    queue = deque(node_id for node_id in node_ids if indegree[node_id] == 0)
+    ordered: list[str] = []
+    while queue:
+        node_id = queue.popleft()
+        ordered.append(node_id)
+        for target in sorted(adjacency.get(node_id, [])):
+            indegree[target] -= 1
+            if indegree[target] == 0:
+                queue.append(target)
+    if len(ordered) != len(node_ids):
+        ordered = node_ids
+    return {node_id: index for index, node_id in enumerate(ordered)}
 
 
 def _make_artifact(

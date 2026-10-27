@@ -249,6 +249,130 @@ Routing quality is not one number. Report:
 If oracle routing does not beat the best single model on a domain, do not train a router
 for it. Remove the branch; one less node is a feature.
 
+### 4.5 Local router recipe (implemented)
+
+The v0 recipe is deliberately dependency-light: **pure Python, no torch, no numpy, no
+scikit-learn**. It runs on a CPU and is small enough to audit. It implements the dataset
+bridge, a rules floor, a conditional-logit classifier, temperature scaling, a cost-sensitive
+abstain threshold, and a provider adapter that the existing router executor calls unchanged.
+
+```text
+T-0023 export ──► mg train dataset ──► router examples + summary
+                                      │
+                                      ├─ rules/keyword baseline (floor)
+                                      └─ conditional-logit classifier
+                                             │
+                         validation-only temperature scaling
+                         validation-only abstain threshold (cost matrix)
+                                             │
+                                      artifact JSON + report
+                                             │
+                               provider: trained-router
+```
+
+**Dataset bridge.** `mg train dataset` reads a T-0023 dataset directory (manifest +
+`examples.jsonl`) or a bare `examples.jsonl`. It keeps the rendered messages, parses the menu,
+and requires a positive route label (`oracle`, `human_label`, or a matching trace label) plus
+`should_abstain`. Unknown labels are counted and excluded; contradictory labels (route not in
+the menu, `route=abstain` with `should_abstain=false`, a route whose source is `unknown`, or
+`should_abstain=false` with no route at all) are rejected. It preserves the dataset manifest
+hash, example id, run/node/event, consent, license, redaction and hashes, reports class
+balance/per-route counts, and rejects a group that straddles splits. The output contract is
+documented in code
+([`src/modelgraph/training/dataset.py`](../src/modelgraph/training/dataset.py)); it is not a new
+graph contract.
+
+**Trained model.** A multinomial conditional logit scores every candidate in the rendered menu
+using hashed request words/bigrams, route-definition overlap (a shared "definition hit" feature
+so an unseen request word that matches the menu can still help), candidate identity, and a few
+scalars. Training is full-batch Adam with a fixed seed, deterministic example order, no random
+initialization, and optional balanced class weights. Ambiguous training examples are excluded
+from the route classifier by default; the abstain decision is a calibrated confidence threshold,
+not a learned "abstain keyword". The class inventory comes from the **train split only**, so a
+validation- or test-only route cannot add a class or weight to the artifact. The artifact schema
+is [`router-artifact.schema.json`](../src/modelgraph/training/schemas/router-artifact.schema.json)
+(`modelgraph/router-artifact/v0`) and records the feature version and `features.bigrams` switch,
+classes, weights, temperature, threshold, cost matrix, training parameters, dataset identity,
+and provenance.
+
+**Calibration and abstention.** Temperature scaling is fitted on **validation route
+predictions only** (non-ambiguous, routed). The test split is evaluated once. The abstain
+threshold is selected by minimizing a documented cost matrix on validation; the default is
+`correct_route=0`, `misroute=1.0`, `unnecessary_abstain=0.35`, `misroute_ambiguous=0.6`,
+`correct_abstain=0`. Raise `unnecessary_abstain` for a graph with no fallback. Reports include
+ECE, a reliability table, coverage/precision/recall, the cost matrix, and the confusion matrix.
+The reliability table and the reported ECE use the same population: routed, non-ambiguous
+predictions accepted at the abstain threshold; the before/after rows are the same cases.
+
+**Runtime integration.** Additive provider kind `trained-router` (model manifest and run
+manifest schemas, `build_provider`). The manifest's `spec.model` is the artifact path; an
+optional `integrity.sha256` is verified before use. A relative path resolves from the current
+directory then the project root. The provider parses the same rendered prompt, emits canonical
+decision JSON, and is consumed by the unchanged router executor. [`training/models/router-triage.yaml`](../training/models/router-triage.yaml)
+and [`training/graphs/hello-triage-trained.graph.yaml`](../training/graphs/hello-triage-trained.graph.yaml)
+are a reference binding. The graph sets `confidence_threshold: 0.0` so the artifact's threshold
+is the single policy; an artifact abstention still uses the graph's normal fallback path.
+
+**Commands (from the repository root).** These are the exact offline commands; no network and
+no real model are required.
+
+```bash
+export UV_CACHE_DIR=$PWD/.uv-cache
+export UV_PYTHON_INSTALL_DIR=$PWD/.uv-python
+
+# 1. Synthetic fixture through the real T-0023 exporter (not a quality claim).
+uv run python training/scripts/build_demo_dataset.py \
+  --seed 20261025 --count 200 --force
+
+# 2. T-0023 dataset -> router examples + class/split summary.
+uv run mg train dataset \
+  --dataset runs/training/router-dataset \
+  --out runs/training/router-examples
+
+# 3. Train + calibrate + select the abstain threshold + write artifact/report.
+uv run mg train router --config training/configs/router-triage.yaml
+
+# 4. Routing-only external check on the small hand-authored suite.
+uv run mg eval routing \
+  --suite evals/mock/triage \
+  --graph training/graphs/hello-triage-trained.graph.yaml \
+  --provider trained-router \
+  --registry registry/models --registry training/models \
+  --reports-dir runs/training/eval
+```
+
+For a real dataset, replace step 1 with `mg data export` and a label file that supplies oracle
+routes and `ambiguous`, then point `dataset` in the config at that export. Use `--split-ratio`,
+`--split-seed`, and `--split-plan` so the test groups stay frozen. The recipe config is
+[`training/configs/router-triage.yaml`](../training/configs/router-triage.yaml); `mg train
+router --dataset/--artifact/--report` can override paths without editing the config.
+
+**Hardware and seeds.** Python 3.12; any CPU; roughly 0.1 GB RAM and under a few seconds for
+the 125-example, 40-epoch fixture. No GPU, CUDA, torch, transformers, PEFT, numpy, or network.
+Seeds: `20261025` for the demo generator and training; split seed `router-demo-20261025`;
+`created_at` fixed to `2026-10-25T00:00:00Z`. The split plan is written to
+`runs/training/demo-splits.json`. Weights and run data stay under git-ignored `runs/`; only the
+config, graph, manifest, script, schema, and docs are committed.
+
+**Measured result on the synthetic fixture (2026-10-25).** 200 routing examples
+(train 125 / validation 39 / test 36, grouped by run). The classifier (40 epochs, 512 hashed
+buckets) reached test oracle agreement **0.933**, coverage **0.778**, abstain precision
+**0.750**, abstain recall **1.000**, ECE **0.003**, and expected cost **0.019/case**. Temperature
+was **0.799**, fitted on 31 validation route predictions. The rules floor reached agreement
+0.867, coverage 0.944, ECE 0.073, cost 0.175. The scripted incumbent reached agreement 0.900,
+coverage 1.000, ECE 0.100, cost 0.183. On this fixture the trained router improved both oracle
+agreement and cost against the scripted comparators; the gain is routing-only and the
+incumbent is a stand-in. On the separate hand-authored `evals/mock/triage` suite it scored
+agreement **0.90**, abstain precision **0.50**, and ECE **0.008**, passing that suite's gate;
+the suite has 12 cases, so the interval is wide ([0.60, 0.98] for agreement). These are not
+end-to-end quality claims; e2e needs live worker providers and a real suite.
+
+**Known limits.** The demo data is synthetic and small; the incumbent is a scripted keyword
+stand-in, not `router-small`; the confidence threshold does not separate ambiguous from
+unfamiliar-but-clear requests; the menu/feature extractor is lexical; and there is no SLM
+fine-tune path in this environment. Treat the recipe as a reproducible baseline and a
+calibration harness, not a promotion.
+
 ## 5. Specialist training
 
 ### 5.1 Recipes
@@ -342,6 +466,114 @@ the revision workflow in [iteration.md](iteration.md).
 A model that is better on the node test but worse end-to-end is not promoted. The graph is
 the product; the node is a part.
 
+### 5.5 Local specialist kit (T-0025, review)
+
+The v0 specialist kit has two paths. The **CPU rehearsal** runs here and proves the artifact
+pipeline. The **real LoRA/QLoRA/distillation paths** are documented and fail closed; they are
+**unverified in this repository's development environment**, which has no
+torch/transformers/PEFT stack, CUDA driver, or GPU. T-0025 therefore remains in review until a
+real 8GB and 24GB run is recorded on real hardware.
+
+```text
+T-0023 dataset (JSONL + manifest)
+   │ consent/license/provenance preserved
+   ▼
+node filter + exact dedupe + (distill: recorded-output filter)
+   ▼
+deterministic CPU rehearsal ──► artifact.json      (synthetic: true, quality_claim: false)
+   │                          ├─ manifest.yaml     (schema-valid modelgraph/v0)
+   │                          ├─ card.md           (base/data/method/hyperparams/eval/limits/license)
+   │                          ├─ eval-report.json  (node suite + graph regression, model pinned)
+   │                          ├─ eval/             (report + run-manifest evidence, hashed)
+   │                          ├─ reproducibility.json
+   │                          └─ training-report.md
+   ▼
+candidate only. --promote refuses a synthetic artifact and refuses any run without a passing eval report.
+```
+
+**Dataset ingestion.** `load_specialist_dataset` reads a T-0023 directory (`dataset.json` +
+`examples.jsonl`) or a bare JSONL file. It verifies the examples hash against the manifest,
+rejects unrecorded required consent, filters to `kind: node` and the configured source node,
+requires rendered messages and a non-empty output artifact, and records every exclusion. It
+preserves dataset/source/run hashes, per-example license and consent, redaction status, and
+contamination status. It never invents a label; node labels are reported as recorded.
+
+**Deterministic rehearsal.** `mg train specialist` builds a self-describing
+`modelgraph/specialist-artifact/v0` artifact whose pseudo-tensors are a deterministic SHA-256
+function of the dataset digest and seed. No optimizer step is taken, no adapter is produced,
+and the artifact is marked `synthetic: true`, `quality_claim: false`. The manifest, card, eval
+hook, and reproducibility record are real artifacts with real hashes; only the weights are
+rehearsal data.
+
+**Offline distillation rehearsal.** `training/configs/distill-synthetic.yaml` treats the
+recorded node outputs in the dataset as teacher samples. It applies the documented filter
+(include/exclude failures, minimum bytes, exact-duplicate output), records what was dropped,
+and runs the same student pipeline with `teacher.calls: 0`. No teacher model is called and no
+teacher quality is inherited or claimed. A real teacher path is in
+`training/distill.py`/`configs/distill-24gb.yaml`; it needs a licensed live teacher, network,
+and real training hardware, and is unverified here.
+
+**Eval hook.** The hook writes a copy of the target graph with the target node pinned to the
+new `id@version`, then compiles it through the normal compiler/registry path and runs:
+
+- the node suite (`evals/mock/js-specialist` by default), and
+- the graph regression (`evals/e2e/coding-specialist` by default).
+
+Both reports are copied next to the contribution and hashed. The registry eval report records
+the model pin, suite hashes, graph hash, evidence report/run-manifest paths and hashes, seeds,
+hardware, and gate results. It uses the deterministic mock provider: a pass proves the harness,
+the pinned graph, and the evidence format, not the artifact's quality. A missing, failing,
+wrong-model, or hash-mismatched report is rejected.
+
+**Promotion gate.** `--promote` requires a passing eval report (supplied with `--eval-report`
+or produced by the hook). If there is no passing report it fails. A synthetic artifact is then
+refused regardless of the report. The rehearsal is a candidate, never a promoted model. A real
+adapter must be trained on real hardware, served by a real provider, evaluated with real
+responses, and submitted with a passing report.
+
+**Reproducibility record.** `reproducibility.json` contains the git commit and dirty flag,
+config hash, dataset id/version/hash/license/consent/counts/sources, artifact/manifest/card
+hashes, training and evaluation seeds, the split seed, configured hardware plus observed
+platform/Python/torch, the optional image digest, the exact command, and explicit limitations.
+A real run must also record the container image digest and the actual GPU/driver.
+
+**Exact commands (offline, from the repository root).**
+
+```bash
+export UV_CACHE_DIR=$PWD/.uv-cache
+export UV_PYTHON_INSTALL_DIR=$PWD/.uv-python
+
+uv run python training/scripts/build_specialist_demo_dataset.py \
+  --seed 20261025 --count 40 --force
+
+uv run mg train specialist --config training/configs/specialist-synthetic.yaml --eval
+uv run mg train specialist --config training/configs/distill-synthetic.yaml --eval
+
+uv run pytest tests/training/test_specialist.py -q
+```
+
+Outputs are written under `runs/training/<model-id>/` (git-ignored). No weights, adapters, or
+run data are committed.
+
+**Reference hardware and data (real path, unverified here).**
+
+| Tier | Practical recipe | Expected data | Public command |
+| --- | --- | --- | --- |
+| 8GB | 3B QLoRA, rank 16, seq 2048, effective batch 16 | 500–5,000 examples, ~1–20 MB JSONL | `uv run python training/sft_lora.py --config training/configs/specialist-8gb-qlora.yaml --execute` |
+| 24GB | 7B BF16 LoRA, rank 32, seq 4096, effective batch 16 | 2,000–20,000 examples, ~5–100 MB JSONL | `uv run python training/sft_lora.py --config training/configs/specialist-24gb-lora.yaml --execute` |
+| 24GB | 3B student distilled from a 32B teacher, then LoRA | 2,000–20,000 filtered teacher samples | `uv run python training/distill.py --config training/configs/distill-24gb.yaml --sample` then `--train` |
+
+The hardware assumptions, base-model download sizes, VRAM peaks, and runtime estimates live in
+the configs and [`training/README.md`](../training/README.md). `--dry-run` prints the resolved
+plan and missing modules without training. `--execute` refuses when the stack or CUDA device is
+absent. Real training writes an adapter and `training-result.json`; it does not promote or
+evaluate the adapter by itself.
+
+**Known limits.** The mock eval cannot validate an adapter; distillation inherits teacher
+mistakes and license terms (record both); narrow SFT data regresses off-distribution; the
+reviewed 8GB/24GB claim is a product promise that must be tested on real hardware. The model
+card says all of this and the artifact states `quality_claim: false`.
+
 ## 6. Joiner training
 
 Joiners benefit from examples of conflicting inputs and the desired resolution: which
@@ -377,7 +609,9 @@ Every trained node must ship:
 | **Reproducibility info** | Code commit, container/image digest, random seeds, hardware |
 
 The registry accepts a model only when these are present and the eval report is
-reproducible. A weights file with no card is not a node; it is an unlabelled artifact.
+reproducible. A weights file with no card is not a node; it is an unlabelled artifact. See
+[`registry/README.md`](../registry/README.md) for the versioned layout, the exact evidence
+format, and `mg registry verify`.
 
 ## 9. The data flywheel
 

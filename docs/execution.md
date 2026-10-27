@@ -25,7 +25,7 @@ graph.yaml ──parse──▶ document ──schema──▶ valid document
                                               │
                     registry ──resolve───────┤
                                               ▼
-                                     static validation (V-01..V-20)
+                                     static validation (V-01..V-22)
                                               │
                        profile ──prune────────┤
                                               ▼
@@ -59,9 +59,11 @@ run manifest.
 
 ## 2. The walk
 
-v0 executes one active branch at a time. The scheduler is still written around a
-**frontier** (a set of active paths) so fan-out can be added without changing the core
-loop.
+A graph with `selection: single` everywhere keeps the sequential walk below: one active
+node at a time. A graph that declares `top_k` or `all` uses the fan-out scheduler
+([§2.2](#22-fan-out-and-joins)): a node-level dependency DAG executes on a bounded thread
+pool, and the same walk semantics apply inside each branch. The single-selection path is
+deliberately unchanged so existing graphs and traces do not move.
 
 ```python
 def run(graph, request, profile):
@@ -119,9 +121,66 @@ Important properties of this loop:
 - **The backend owns model invocation, not semantics.** The portable backend (B0) wraps
   provider adapters. A resident or fused backend (B1/B2) implements the same call contract
   in-process and must pass logical-parity tests.
-- **One branch in v0.** If a node has multiple successors, only a fan-out-capable node
-  (router with `selection: top_k`, deferred) may activate more than one. The loop's
-  frontier supports it; validation prevents it until the scheduler does.
+- **One branch by default.** In the sequential walk, a router activates exactly one
+  successor. A router with `selection: top_k` or `all` switches the graph to the fan-out
+  scheduler, which may activate several successors from one decision.
+
+### 2.2 Fan-out and joins
+
+Fan-out is scheduled as a DAG, not by re-entering the sequential walk. Each node is
+runnable when every incoming edge has been resolved: delivered by a branch that ran, or
+marked inactive because an upstream router did not select it. This is what makes a joiner
+wait for all declared inputs without a second, ad-hoc barrier.
+
+```python
+def fan_out_run(graph, request):
+    ctx = Envelope.create(graph, request)
+    frontier = [Frame(node=graph.entry)]
+    pending = {}                       # node -> first-call reservation
+    while frontier or pending:
+        ready = [frame for frame in frontier if frame.is_runnable()]
+        # Atomic fan-out pre-flight: all first calls or none; veto before start.
+        budget.reserve_many([estimate_first_call(frame) for frame in ready])
+        for frame in ready[:budget.concurrency_limit]:
+            pool.submit(run_node, frame)   # real threads, shared budget/trace
+        for result in pool.wait_for_one():
+            trace.record(result)           # deterministic start order, actual completion order
+            frontier.extend(graph.activate(result.selected_edges))
+    return ctx.result_artifacts(graph.exit)
+```
+
+Rules:
+
+1. **Selection is deterministic.** `all` uses menu order (edge `priority` descending, then
+   target ID). `top_k` uses confidence, then priority, then target ID, and fills missing
+   slots from menu order. See [graph-model.md §5.1](graph-model.md#51-multi-selection-decisions).
+2. **Concurrency is bounded.** The default limit is 4 in-flight branch calls
+   (`run_graph(..., max_concurrency=N)` or `mg run --max-concurrency N`). The limit bounds
+   provider calls, not the number of selected branches; branches beyond the limit wait.
+3. **The budget is shared and reserved.** Before a ready batch starts, the scheduler
+   renders each first prompt, estimates tokens and cost, and reserves the sum atomically.
+   If the sum does not fit, the run fails with `MG-4002`/`MG-4003` and **no branch call
+   starts**. Reservations are replaced by reported usage when the call returns.
+4. **A joiner waits for its declared inputs.** It runs only when every incoming edge is
+   resolved and every `read` artifact exists. A missing read is `MG-2201`; the contract
+   has no `allow_partial`, so partial joins are not accepted. A join that waits past
+   `join_timeout_seconds` (or the wall budget when unset) fails with `MG-2105`.
+5. **A branch failure fails the run, not the process.** The scheduler stops starting new
+   nodes, lets in-flight calls settle, records the failing branch, and raises the first
+   branch failure by start order. The joiner does not run; the run does not hang.
+6. **Accounting is per branch.** Each branch has its own usage ledger (tokens, cost,
+   cache hits). `RunOutcome.branches` and the `branch.completed` / `run.finished` trace
+   events report direct and total usage. The root branch covers work before the first
+   fan-out; each fan-out branch reports its own work; the join branch covers the joiner.
+   A branch whose target is a subgraph reports the inner branches as descendants and
+   exposes `subtree_total_tokens`/`subtree_cost_usd`; inner single-selection subgraphs get
+   their own branch record so their cost does not disappear. `contributed` marks the
+   branches whose artifacts reached a joiner, and `joiner.joined` repeats their usage.
+7. **Trace order is reconstructable.** Node events are flushed in deterministic start
+   order; each `node.entered` carries `start_order` and each `node.exited` carries
+   `completion_order`. Completion order is real (it can vary between runs) and is recorded
+   separately rather than being used as trace order. Artifacts, envelopes, and manifests
+   use deterministic producer order for the same reason.
 
 ### 2.1 Subgraph execution
 
@@ -137,7 +196,7 @@ A subgraph invocation:
 A subgraph failure propagates as a node failure in the parent, with the child trace linked.
 The parent may have a fallback only at router level; there is no per-node catch in v0.
 
-### 2.2 Backend execution
+### 2.3 Backend execution
 
 Before the walk, the runtime asks the backend to plan and load:
 
@@ -165,7 +224,7 @@ not branch on backend mode; only the executors' call target changes.
 | Object | Lifetime | Persisted | Notes |
 | --- | --- | --- | --- |
 | Graph IR | Run | Yes (hash in run manifest) | Immutable |
-| Envelope | Run | Serialized at node boundaries (redacted) | Mutable, single-writer in v0 |
+| Envelope | Run | Serialized at node boundaries (redacted) | Mutable; lock-protected writes under fan-out |
 | Artifacts | Run | Content-addressed blobs | Append-only |
 | Budget | Run | Snapshot per event | Shared with subgraphs |
 | Path/frames | Run | Trace events | Ordered |
@@ -193,9 +252,15 @@ Rules:
 1. **Hard ceiling.** The runtime never exceeds a budget to finish a request. It fails,
    unless `on_budget_exhausted: best_effort`, in which case it returns artifacts produced
    so far and marks the run `budget_exhausted`.
-2. **Pre-flight estimate.** Before a call, the runtime estimates the minimum cost and
-   tokens (input tokens known from the render, output at least 1). If that already exceeds
-   the remainder, the call is vetoed with `MG-4xxx` rather than started and abandoned.
+2. **Pre-flight estimate and reservation.** Before a call, the runtime estimates the
+   minimum cost and tokens (input tokens known from the render, output at least 1) and
+   **reserves** them under the budget lock. If that already exceeds the remainder, the
+   call is vetoed with `MG-4xxx` rather than started and abandoned. A fan-out batch
+   reserves all of its first calls atomically before any branch starts; an unaffordable
+   ensemble is refused with no partial start. Reservations are settled with the provider's
+   reported usage and released on failure.
+   Fan-out can multiply cost by roughly the number of activated branches; this is why the
+   veto is mandatory and why `top_k`/`all` are opt-in.
 3. **No negative budgets.** A provider that reports more usage than estimated is charged
    as reported; the next pre-flight check fails. Under-reporting is a provider bug and is
    recorded in `provider_meta`.
@@ -244,10 +309,12 @@ Determinism is a spectrum. The runtime is explicit about what it can guarantee.
 | Layer | Guarantee |
 | --- | --- |
 | Compilation | Bit-identical IR for identical inputs and registry versions (canonical form). |
-| Scheduling | Identical node sequence for identical graph and decisions. |
+| Scheduling | Identical node activation order for identical graph and decisions; start order is recorded. |
+| Fan-out completion | Wall-clock completion order can vary; it is recorded separately (`completion_order`) and never used as trace order. |
 | Prompts | Identical rendered messages for identical envelopes, node, and renderer version. |
 | Routing | Identical decisions if the provider is deterministic (temperature 0, seed support). |
 | Worker output | Not guaranteed by non-deterministic providers. Replay re-sends identical requests. |
+| Artifacts/manifests | Deterministic producer order for scripted responses, independent of branch completion order. |
 | Cost/latency | Varies with provider and hardware. |
 
 **Replay** has two modes:
@@ -556,18 +623,25 @@ A hit is resolved in `Executor.call` **before** the provider is called:
 
 ## 8. Concurrency and streaming
 
-v0 executes a single route sequentially. That is a deliberate simplification, not an
-architectural limit.
+Graphs with only `selection: single` still execute sequentially. Fan-out graphs execute
+independent branches concurrently on a bounded thread pool:
 
-- **Fan-out/ensemble** (deferred): the scheduler can run independent branches concurrently;
-  budget accounting and trace ordering must become concurrency-safe first
-  ([T-0018](../.scratch/tickets/T-0018-fanout-ensemble.md)).
+- **Limit.** `max_concurrency` defaults to 4 in-flight branch calls and is configurable per
+  run (`run_graph(max_concurrency=...)`, `mg run --max-concurrency`). The limit is per
+  scheduler; a nested subgraph has its own limit.
+- **Real threads, shared state.** Branches use real worker threads because provider
+  adapters are synchronous. Budget accounting, cache statistics, envelope writes, and the
+  provider registry are lock-protected. The trace is buffered per node and flushed in
+  deterministic start order.
+- **No speculative execution.** A branch starts only after the router decision selects it
+  and its first-call reservation is granted. Branches are not started early and discarded.
+- **Join timeout.** A joiner may wait up to `join_timeout_seconds`; when unset, the
+  wall-clock budget is the outer bound. In-flight provider calls are not killed (threads
+  cannot be interrupted safely), so a timeout fails the run after the call returns; the
+  same cooperative limitation as the wall budget.
 - **Streaming** (deferred): the CLI may stream the final artifact from the last provider
   call for UX, but intermediate nodes produce structured artifacts. A `stream: true` option
   must not change graph semantics. See `Q-008`.
-- **Parallel subgraphs** are not allowed in v0; one front branch only.
-- **Thread/async model**: the runtime is async internally so provider calls do not block
-  the event loop, even though v0 awaits one call at a time.
 
 ## 9. Observability
 
@@ -590,7 +664,12 @@ Event types:
 | `provider.response.cached` | original usage, avoided tokens/cost, cache hit id |
 | `cache.miss` | node, cache key, mode, whether a write was allowed |
 | `cache.skipped` | node, reason (`default-secret-pattern` or `write-failed`), pattern names |
-| `decision.made` | decision, target, confidence, reason, threshold, tie-break |
+| `decision.made` | decision, target(s), selection, confidence, reason, threshold |
+| `fanout.decision` | router, selection, targets, branch ids |
+| `fanout.preflight` | nodes, branches, estimated tokens/cost, accepted, code |
+| `branch.started` / `branch.completed` | branch id/kind, node, start order, outcome, per-branch tokens/cost |
+| `joiner.inputs` / `joiner.incomplete` / `joiner.joined` | declared reads, received/missing inputs, contributing branches and their cost |
+| `join.timeout` | joiner, timeout, waited seconds, pending branches |
 | `artifact.written` | name, type, hash, producer, bytes |
 | `budget.charged` | tokens, cost, elapsed, remaining |
 | `prune.applied` | profile, removed nodes/edges, warnings |
@@ -600,6 +679,9 @@ Event types:
 Rules:
 
 - Events are timestamped with a monotonic clock and a wall-clock timestamp.
+- Node event groups are persisted in deterministic `start_order`, not completion order.
+  `node.exited` and `branch.completed` carry a real `completion_order`; the two orders are
+  separate so a concurrent trace remains reconstructable.
 - Content is referenced by hash; full prompts may be stored separately under `prompts/`
   when `--save-prompts` is enabled, subject to redaction.
 - The trace never contains API keys or unredacted secrets. Persistence applies the default
@@ -625,6 +707,9 @@ Rules:
 | Pruning removes the entry or an exit | No run; `PruneReport`; explicit failure. |
 | Router low confidence with `error` | Run failed; partial artifacts and decision preserved. |
 | Worker provider failure after retries | Run failed at that node; partial artifacts preserved. |
+| Fan-out branch failure | Run failed with the first branch error by start order; the joiner does not run; in-flight branches settle. |
+| Joiner missing a declared input | Run failed `MG-2201`; no partial join; `joiner.incomplete` names the missing reads. |
+| Joiner wait timeout | Run failed `MG-2105`; in-flight calls are allowed to return; `join.timeout` records the pending branches. |
 | Budget exhausted with `fail` | Run `budget_exhausted`; no result returned; artifacts preserved. |
 | Budget exhausted with `best_effort` | Run `budget_exhausted`; artifacts written so far returned with a warning. |
 | Caller cancellation | Run `aborted`; in-flight call allowed to finish or cancelled if supported. |
@@ -637,7 +722,6 @@ training data. The runtime must never delete a trace to make a failure look clea
 
 | Feature | Why deferred | Ticket / question |
 | --- | --- | --- |
-| Fan-out and ensemble joins | Needs concurrency-safe budgets, trace ordering, and a clear quality story | [T-0018](../.scratch/tickets/T-0018-fanout-ensemble.md) |
 | Semantic response cache | Behavior can change silently; needs evaluation | Backlog B-01 |
 | Tool/code execution nodes | Security and sandboxing dominate the design | `Q-004` |
 | Streaming intermediate events | UX, not semantics | `Q-008` |

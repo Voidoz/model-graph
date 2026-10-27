@@ -1,0 +1,81 @@
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: hello-triage-trained
+  name: Hello Triage (trained router)
+  version: 1.0.0
+  description: A minimal router bound to the local trained-router provider; used by the T-0024 recipe.
+  labels:
+    domain: general
+    difficulty: starter
+  authors:
+    - Model Graph contributors
+  license: TBD
+spec:
+  entry: triage
+  inputs:
+    - name: task
+      type: text
+      required: true
+      description: The user request to route.
+  exit: [answer]
+  fallback: coding
+  defaults:
+    max_steps: 6
+    max_depth: 2
+    max_cost_usd: 0.05
+    max_wall_seconds: 120
+    max_total_tokens: 24000
+  nodes:
+    - id: triage
+      kind: router
+      description: Decides whether a request is a coding task or a storytelling task.
+      model: router-triage
+      reads: [task]
+      routing:
+        # The artifact owns the abstain threshold; the runtime threshold is disabled so the
+        # policy is not applied twice. An artifact abstention still uses the normal fallback path.
+        confidence_threshold: 0.0
+        on_low_confidence: fallback
+        max_retries: 0
+    - id: coding
+      kind: worker
+      description: Writes code and concise implementation notes.
+      model: coder-7b
+      reads: [task]
+      instruction: |
+        You are a careful software engineer. Produce working code and a short explanation.
+        State any assumptions you make. Put the final deliverable in the artifact named "answer".
+      writes:
+        - name: answer
+          type: code
+          media_type: text/plain
+    - id: story
+      kind: worker
+      description: Writes short fiction, narrative, or poetry in the requested style.
+      model: story-7b
+      reads: [task]
+      instruction: |
+        You are a concise storyteller. Write the requested story or poem.
+        Do not explain your process. Put the final text in the artifact named "answer".
+      writes:
+        - name: answer
+          type: text
+          media_type: text/markdown
+  edges:
+    - from: triage
+      to: coding
+      when: The user asks for code, debugging, architecture, or technical implementation.
+      examples:
+        - Write a TypeScript function that debounces a callback.
+        - Why does my Python test fail with a KeyError?
+      artifact: code
+      priority: 10
+    - from: triage
+      to: story
+      when: The user asks for fiction, narrative, characters, or a poem.
+      examples:
+        - Tell me a story about a lighthouse keeper.
+        - Write a two-line poem about rain.
+      artifact: text
+      priority: 0

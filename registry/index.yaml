@@ -1,0 +1,4 @@
+apiVersion: modelgraph/registry-index/v0
+content_hash: sha256:25124b024f6f4779deee4b59db27bda8120f356b308a08dad0539dfa8fa3f549
+kind: RegistryIndex
+models: []

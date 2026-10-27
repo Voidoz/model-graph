@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:modelgraph:schema:registry-index:v0",
+  "title": "Model Registry Index",
+  "description": "Deterministic index of the versioned local model registry. The content hash covers the apiVersion, kind, and sorted model entries; it deliberately excludes timestamps. Version: modelgraph/registry-index/v0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "content_hash", "models"],
+  "properties": {
+    "apiVersion": {"const": "modelgraph/registry-index/v0"},
+    "kind": {"const": "RegistryIndex"},
+    "content_hash": {"$ref": "#/$defs/hash"},
+    "models": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/entry"}
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "path",
+        "provider",
+        "license",
+        "hashes",
+        "passed",
+        "warnings"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$"},
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+        },
+        "path": {"type": "string", "minLength": 1},
+        "provider": {
+          "type": "string",
+          "enum": ["mock", "openai-compatible", "ollama", "llamacpp", "custom", "trained-router"]
+        },
+        "license": {"type": "string", "minLength": 1},
+        "hashes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["manifest", "card", "eval_report"],
+          "properties": {
+            "manifest": {"$ref": "#/$defs/hash"},
+            "card": {"$ref": "#/$defs/hash"},
+            "eval_report": {"$ref": "#/$defs/hash"},
+            "weights": {"$ref": "#/$defs/hash"}
+          }
+        },
+        "passed": {"type": "boolean"},
+        "warnings": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

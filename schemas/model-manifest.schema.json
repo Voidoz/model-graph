@@ -44,7 +44,7 @@
       "properties": {
         "provider": {
           "type": "string",
-          "enum": ["mock", "openai-compatible", "ollama", "llamacpp", "custom"],
+          "enum": ["mock", "openai-compatible", "ollama", "llamacpp", "custom", "trained-router"],
           "description": "Adapter family used to reach the model."
         },
         "model": {

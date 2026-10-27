@@ -24,4 +24,8 @@ def build_provider(
         return OllamaProvider(manifest, client=client)
     if provider in {"openai-compatible", "llamacpp"}:
         return OpenAICompatibleProvider(manifest, client=client)
+    if provider == "trained-router":
+        from modelgraph.providers.trained_router import TrainedRouterProvider
+
+        return TrainedRouterProvider(manifest)
     raise ProviderFailure(f"unsupported provider {provider!r}", code="MG-3005", retryable=False)

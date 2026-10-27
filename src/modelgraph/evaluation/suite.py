@@ -121,7 +121,9 @@ class Provenance(_Model):
 
 class SuiteSpec(_Model):
     level: Literal["node", "routing", "e2e"]
-    provider: Literal["mock", "auto", "ollama", "openai-compatible", "llamacpp"] = "mock"
+    provider: Literal[
+        "mock", "auto", "ollama", "openai-compatible", "llamacpp", "trained-router"
+    ] = "mock"
     claim: str | None = None
     target: NodeTarget | RoutingTarget | E2ETarget
     metric: str

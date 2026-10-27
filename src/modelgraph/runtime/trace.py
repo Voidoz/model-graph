@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import threading
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,11 +25,22 @@ from modelgraph.util import utc_now
 class TraceRecorder:
     run_id: str
     events: list[dict[str, Any]] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def emit(self, event: str, **fields: Any) -> dict[str, Any]:
         record = {"ts": utc_now(), "run_id": self.run_id, "event": event, **fields}
-        self.events.append(record)
+        with self._lock:
+            self.events.append(record)
         return record
+
+    def extend(self, events: list[dict[str, Any]]) -> None:
+        with self._lock:
+            self.events.extend(events)
+
+    def make(self, event: str, **fields: Any) -> dict[str, Any]:
+        """Build a record without appending it (used by deterministic group flushing)."""
+
+        return {"ts": utc_now(), "run_id": self.run_id, "event": event, **fields}
 
     def write(self, path: Path, *, redact: bool = True) -> RedactionReport | None:
         """Write the event stream, redacting secret/PII-shaped text by default.
@@ -60,7 +73,13 @@ def read_events(path: str | Path) -> list[dict[str, Any]]:
 
 
 class ReplayProvider:
-    """Serve recorded provider responses in order, without a network call."""
+    """Serve recorded provider responses without a network call.
+
+    Responses are indexed by ``(node id, prompt hash)`` so a concurrent fan-out replay is
+    independent of the order in which branches happen to call. A trace recorded before
+    prompt hashes were added (or a request that has no prompt hash) falls back to the
+    original strict sequence.
+    """
 
     name = "replay"
 
@@ -71,6 +90,13 @@ class ReplayProvider:
             if event.get("event") in {"provider.response", "provider.error"}
         ]
         self.index = 0
+        self._lock = threading.Lock()
+        self._by_key: dict[tuple[str, str], deque[dict[str, Any]]] = defaultdict(deque)
+        for event in self.events:
+            node = event.get("node")
+            prompt_hash = event.get("prompt_hash")
+            if node and prompt_hash:
+                self._by_key[(str(node), str(prompt_hash))].append(event)
 
     def capabilities(self) -> Capabilities:
         return Capabilities(json_mode=True, max_context=1_000_000)
@@ -78,15 +104,33 @@ class ReplayProvider:
     def health(self) -> Health:
         return Health(ok=True, detail="replay provider")
 
+    def _next_event(self, request: ChatRequest) -> dict[str, Any]:
+        node = request.node_id
+        prompt_hash = request.metadata.get("prompt_hash")
+        with self._lock:
+            if node and prompt_hash:
+                key = (str(node), str(prompt_hash))
+                if key in self._by_key:
+                    queue = self._by_key[key]
+                    if not queue:
+                        raise ProviderFailure(
+                            "replay has no remaining recorded response for this node/prompt",
+                            code="MG-3006",
+                            retryable=False,
+                        )
+                    return queue.popleft()
+            if self.index >= len(self.events):
+                raise ProviderFailure(
+                    "replay has no recorded response for this call",
+                    code="MG-3006",
+                    retryable=False,
+                )
+            event = self.events[self.index]
+            self.index += 1
+            return event
+
     def chat(self, request: ChatRequest) -> ChatResponse:
-        if self.index >= len(self.events):
-            raise ProviderFailure(
-                "replay has no recorded response for this call",
-                code="MG-3006",
-                retryable=False,
-            )
-        event = self.events[self.index]
-        self.index += 1
+        event = self._next_event(request)
         if event.get("event") == "provider.error":
             raise ProviderFailure(
                 str(event.get("message", "recorded provider failure")),

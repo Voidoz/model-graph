@@ -45,6 +45,8 @@ class OverflowPolicy(StrEnum):
 
 class RoutingSelection(StrEnum):
     single = "single"
+    top_k = "top_k"
+    all = "all"
 
 
 class LowConfidenceAction(StrEnum):
@@ -103,10 +105,22 @@ class Limits(_Model):
 
 class RoutingConfig(_Model):
     selection: RoutingSelection = RoutingSelection.single
+    k: int | None = None
     confidence_threshold: float = 0.7
     on_low_confidence: LowConfidenceAction = LowConfidenceAction.error
     max_retries: int = 1
     allow_direct_answer: bool = False
+
+    @model_validator(mode="after")
+    def _check_selection(self) -> RoutingConfig:
+        if self.selection == RoutingSelection.top_k:
+            if self.k is None:
+                raise ValueError("routing.k is required when selection is 'top_k'")
+            if not 1 <= self.k <= 64:
+                raise ValueError("routing.k must be between 1 and 64")
+        elif self.k is not None:
+            raise ValueError("routing.k is only valid when selection is 'top_k'")
+        return self
 
 
 class Node(_Model):

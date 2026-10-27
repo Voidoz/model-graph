@@ -1,0 +1,53 @@
+apiVersion: modelgraph/eval/v0
+kind: EvalSuite
+metadata:
+  id: e2e/coding-specialist
+  name: Coding specialist graph regression (mock)
+  version: 1.0.0
+  description: >-
+    Offline graph regression for the coding-specialist graph. It exercises the routing handoff
+    and the exit artifact with scripted mock responses. It is the graph-level half of the
+    T-0025 eval hook, not a model-quality claim.
+  labels:
+    level: e2e
+    domain: coding
+    provider: mock
+  authors:
+    - Model Graph contributors
+  license: CC0-1.0
+spec:
+  level: e2e
+  provider: mock
+  claim: >-
+    The pinned coding-specialist graph routes and produces the declared exit artifact under
+    deterministic mock responses. The report is evidence about the instrument, not the model.
+  target:
+    graph: examples/coding-specialist.graph.yaml
+  metric: task_success
+  thresholds:
+    task_success: 1.0
+    validity: 1.0
+    protocol_error_rate: 0.0
+    cost_per_task_usd: 0.0
+  budget:
+    max_cost_usd: 0.02
+    max_tokens: 100000
+  baselines:
+    best_single: false
+    cheapest_capable: false
+    oracle_routing: false
+    random_routing: false
+    incumbent: false
+    measure_oracle: false
+    notes: >-
+      The regression only needs the graph result; baselines would add scripted probes without
+      improving the T-0025 gate.
+  selection:
+    reason: Three hand-written cases cover the JS route, a type-heavy JS route, and the fallback route.
+  provenance:
+    source: Hand-written tasks and scripted mock responses.
+    contamination: checked
+    notes: No benchmark or training data is copied into this suite.
+  cases: cases.jsonl
+  judge:
+    enabled: false

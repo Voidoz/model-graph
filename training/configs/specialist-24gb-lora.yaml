@@ -1,0 +1,92 @@
+# T-0025 24GB LoRA SFT reference config.
+#
+# STATUS: UNVERIFIED IN THIS REPOSITORY'S DEVELOPMENT ENVIRONMENT.
+# There is no torch/transformers/PEFT stack, CUDA driver, or 24GB GPU here. Do not claim this
+# recipe ran until it is executed on real hardware and the ticket records the evidence.
+#
+# Hardware assumption: one 24GB NVIDIA GPU (RTX 3090 / 4090 / A10G class), CUDA 12.1+, driver
+# 535+, 64GB system RAM, ~40GB free disk. The 7B BF16 base is ~15GB; LoRA at rank 32 and 4096
+# tokens peaks near 20-23GB VRAM with gradient checkpointing.
+#
+# Expected data: 2,000-20,000 clean SFT examples; examples.jsonl roughly 5-100 MB. A 2,000
+# example validation cut is a reasonable minimum for a public claim; use frozen splits.
+#
+# Exact commands (after `uv sync` and installing the real stack):
+#   uv pip install torch transformers peft datasets accelerate trl
+#   uv run python training/sft_lora.py --config training/configs/specialist-24gb-lora.yaml --dry-run
+#   uv run python training/sft_lora.py --config training/configs/specialist-24gb-lora.yaml --execute
+#   # evaluate the real adapter on the served model; mock eval cannot validate it.
+schema: modelgraph/specialist-training-config/v0
+name: js-specialist 7B LoRA SFT (24GB)
+method: lora
+mode: real
+dataset: runs/training/js-specialist-sft
+node: js-specialist
+output_dir: runs/training/js-specialist-24gb
+seed: 20261025
+created_at: "2026-10-25T00:00:00Z"
+notes: >-
+  Real-recipe reference. Unverified in this environment; the 24GB hardware claim is a promise
+  that must be tested on real hardware before T-0025 is marked done.
+model:
+  id: js-specialist-7b-lora
+  name: JavaScript Specialist 7B (LoRA SFT)
+  version: 0.1.0
+  description: >-
+    A BF16 LoRA SFT recipe for a 7B JavaScript/TypeScript specialist trained from a narrow,
+    consented dataset export.
+  base: Qwen/Qwen2.5-Coder-7B-Instruct
+  base_uri: hf://Qwen/Qwen2.5-Coder-7B-Instruct
+  base_license: apache-2.0
+  provider: llamacpp
+  model: js-specialist-7b-lora
+  context_window: 32768
+  max_output_tokens: 4096
+  capabilities: [chat, seeded]
+  labels:
+    role: worker
+    domain: coding
+    language: javascript
+    hardware: 24gb
+  resources:
+    vram_gb: 24
+    ram_gb: 32
+    disk_gb: 40
+    cpu_only: false
+    network_access: loopback
+hyperparameters:
+  rank: 32
+  alpha: 64
+  dropout: 0.05
+  learning_rate: 0.0002
+  epochs: 3
+  batch_size: 2
+  gradient_accumulation_steps: 8
+  max_seq_length: 4096
+  quantization: none
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  optimizer: paged_adamw_8bit
+  scheduler: cosine
+  warmup_ratio: 0.03
+  gradient_checkpointing: true
+  notes: Effective batch is 16. Drop to batch 1 if the driver reports OOM at 4096 tokens.
+hardware:
+  tier: 24gb
+  gpu: NVIDIA RTX 3090 / 4090 / A10G class (24GB)
+  vram_gb: 24
+  cpu_only: false
+  cuda: "12.1+"
+  driver: "535+"
+  notes: Single GPU, no multi-GPU or CPU offload.
+  expected_data: 2,000-20,000 SFT examples; examples.jsonl ~5-100 MB.
+  expected_runtime: About 4-12 hours for 5,000 examples at 3 epochs (estimate, not measured).
+evaluation:
+  node_suite: evals/mock/js-specialist
+  node_graph: examples/coding-specialist.graph.yaml
+  node: js-specialist
+  graph_suite: evals/e2e/coding-specialist
+  graph_graph: examples/coding-specialist.graph.yaml
+  provider: mock
+  reports_dir: runs/training/js-specialist-24gb/eval/runs
+promotion:
+  require_passing_eval: true
