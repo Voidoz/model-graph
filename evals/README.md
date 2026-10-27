@@ -13,6 +13,10 @@ uv run mg eval e2e --suite evals/e2e/composed-assistant \
   --graph examples/composed-assistant.graph.yaml --provider mock --profile local-8gb
 uv run mg eval e2e --suite evals/e2e/coding-specialist \
   --graph examples/coding-specialist.graph.yaml --provider mock
+# Trained router + scripted mock workers, no network:
+uv run mg eval e2e --suite evals/e2e/hello-trained \
+  --graph training/graphs/hello-triage-trained.graph.yaml --provider mixed \
+  --registry registry/models --registry training/models
 ```
 
 Reports are written to `runs/evals/<report_id>/` (ignored by git) as `report.json`,

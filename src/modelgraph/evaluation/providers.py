@@ -22,7 +22,7 @@ from modelgraph.providers.mock import MockProvider, MockScenario
 LIVE_ENV = "MG_EVAL_LIVE"
 LIVE_VALUES = {"1", "true", "yes", "on"}
 LIVE_PROVIDERS = {"auto", "ollama", "openai-compatible", "llamacpp"}
-OFFLINE_PROVIDERS = {"mock", "trained-router"}
+OFFLINE_PROVIDERS = {"mock", "trained-router", "mixed"}
 
 
 def live_allowed(explicit: bool = False) -> bool:

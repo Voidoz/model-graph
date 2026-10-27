@@ -1,0 +1,61 @@
+apiVersion: modelgraph/eval/v0
+kind: EvalSuite
+metadata:
+  id: e2e/hello-trained
+  name: Hello Triage with a trained router
+  version: 1.0.0
+  description: >-
+    Offline e2e comparison for the T-0024 trained router. The router uses its real serialized
+    artifact; worker responses are scripted mocks, so this measures routing and graph execution
+    rather than live model quality.
+  labels:
+    level: e2e
+    provider: mixed
+  authors:
+    - Model Graph contributors
+  license: CC0-1.0
+spec:
+  level: e2e
+  provider: mixed
+  claim: >-
+    The trained router can execute the hello graph end to end and be compared against an
+    incumbent routing policy without loading a worker model.
+  target:
+    graph: training/graphs/hello-triage-trained.graph.yaml
+  metric: task_success
+  thresholds:
+    task_success: 0.75
+    validity: 0.75
+    protocol_error_rate: 0.2
+    cost_per_task_usd: 0.0
+  budget:
+    max_cost_usd: 0.05
+    max_tokens: 200000
+  baselines:
+    best_single: true
+    cheapest_capable: true
+    oracle_routing: true
+    random_routing: true
+    incumbent: true
+    measure_oracle: true
+    oracle_ambiguity_delta: 0.05
+    random_seed: 7
+    capability_threshold: 0.0
+    notes: >-
+      Worker responses are scripted; quality is routing correctness, not a model-quality claim.
+  oracle:
+    labeling_method: measured-first-hop-route-probes
+    labeling_cost_usd: 0.0
+    sampled_from: evals/e2e/hello-trained/cases.jsonl
+    ambiguity_rule: >-
+      Mark a case ambiguous when the best and second-best measured branch qualities differ by
+      at most the ambiguity delta, or when the case explicitly says so.
+  selection:
+    reason: Four coding and story tasks exercise both branches of the trained router.
+  provenance:
+    source: Hand-written tasks and scripted mock worker responses.
+    contamination: checked
+    notes: No benchmark or training data is copied into this suite.
+  cases: cases.jsonl
+  judge:
+    enabled: false

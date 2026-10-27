@@ -339,6 +339,14 @@ uv run mg eval routing \
   --provider trained-router \
   --registry registry/models --registry training/models \
   --reports-dir runs/training/eval
+
+# 5. Mixed offline e2e: real trained router + scripted mock workers.
+uv run mg eval e2e \
+  --suite evals/e2e/hello-trained \
+  --graph training/graphs/hello-triage-trained.graph.yaml \
+  --provider mixed \
+  --registry registry/models --registry training/models \
+  --reports-dir runs/training/e2e
 ```
 
 For a real dataset, replace step 1 with `mg data export` and a label file that supplies oracle
@@ -364,8 +372,11 @@ coverage 1.000, ECE 0.100, cost 0.183. On this fixture the trained router improv
 agreement and cost against the scripted comparators; the gain is routing-only and the
 incumbent is a stand-in. On the separate hand-authored `evals/mock/triage` suite it scored
 agreement **0.90**, abstain precision **0.50**, and ECE **0.008**, passing that suite's gate;
-the suite has 12 cases, so the interval is wide ([0.60, 0.98] for agreement). These are not
-end-to-end quality claims; e2e needs live worker providers and a real suite.
+the suite has 12 cases, so the interval is wide ([0.60, 0.98] for agreement). The mixed e2e
+suite executes the graph with the real trained-router artifact and scripted worker responses:
+task success **1.0**, validity **1.0**, cost **$0**, against best-single **0.5**, random
+**0.75**, and oracle **1.0**. That is a routing/execution measurement, not live worker-model
+quality; a real worker e2e still needs a live suite and hardware.
 
 **Known limits.** The demo data is synthetic and small; the incumbent is a scripted keyword
 stand-in, not `router-small`; the confidence threshold does not separate ambiguous from

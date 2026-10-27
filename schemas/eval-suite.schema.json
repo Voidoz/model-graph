@@ -48,7 +48,7 @@
         "level": {"type": "string", "enum": ["node", "routing", "e2e"]},
         "provider": {
           "type": "string",
-          "enum": ["mock", "auto", "ollama", "openai-compatible", "llamacpp", "trained-router"],
+          "enum": ["mock", "auto", "ollama", "openai-compatible", "llamacpp", "trained-router", "mixed"],
           "default": "mock"
         },
         "claim": {

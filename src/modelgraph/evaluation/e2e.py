@@ -765,6 +765,13 @@ def _make_provider(
     provider: Provider
     if kind == "mock":
         provider = MockProvider(scenario, max_context=manifest.spec.context_window)
+    elif kind == "mixed":
+        # Offline e2e: use the real trained-router artifact for router nodes and scripted
+        # mock responses for worker nodes. No network or model weights are loaded.
+        if manifest.spec.provider == "trained-router":
+            provider = build_live_provider("trained-router", manifest)
+        else:
+            provider = MockProvider(scenario, max_context=manifest.spec.context_window)
     else:
         provider = build_live_provider(kind, manifest)
     if forced_route is not None:
