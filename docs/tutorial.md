@@ -45,7 +45,7 @@ uv sync
 uv run mg version
 ```
 
-Expected: `0.5.0` (or the current version). The test suite is offline:
+Expected: `0.6.0` (or the current version). The test suite is offline:
 
 ```text
 uv run pytest -q

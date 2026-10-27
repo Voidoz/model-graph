@@ -258,7 +258,31 @@ class EvalReport:
         if self.slices:
             lines.append("## Slices")
             lines.append("")
-            if self.level == "routing":
+            if self.level == "comparison":
+                lines.append(
+                    "| slice | cases | baseline | candidate | delta | 95% CI | "
+                    "W/L/T | cost delta/case | cost 95% CI | latency p50 delta | "
+                    "latency 95% CI |"
+                )
+                lines.append(
+                    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+                )
+                for name in sorted(self.slices):
+                    entry = self.slices[name]
+                    lines.append(
+                        f"| {_escape(name)} | {entry.get('cases', 0)} | "
+                        f"{_fmt(entry.get('baseline_primary'))} | "
+                        f"{_fmt(entry.get('candidate_primary'))} | "
+                        f"{_fmt(entry.get('primary_delta'))} | "
+                        f"{_ci_text(entry.get('primary_delta_ci95'))} | "
+                        f"{entry.get('wins', 0)}/{entry.get('losses', 0)}/"
+                        f"{entry.get('ties', 0)} | "
+                        f"${_fmt(entry.get('cost_delta_per_task_usd'), 6)} | "
+                        f"{_ci_text(entry.get('cost_delta_ci95'))} | "
+                        f"{_fmt(entry.get('latency_delta_p50_seconds'), 3)}s | "
+                        f"{_ci_text(entry.get('latency_delta_ci95'))} |"
+                    )
+            elif self.level == "routing":
                 lines.append(
                     "| slice | cases | labeled | oracle agreement | abstain rate | "
                     "cost/case | latency p95 |"
@@ -740,6 +764,12 @@ def _ci_suffix(ci: Any) -> str:
     if isinstance(ci, list) and len(ci) == 2:
         return f" (95% CI {_fmt(ci[0])}–{_fmt(ci[1])})"
     return ""
+
+
+def _ci_text(ci: Any) -> str:
+    if isinstance(ci, list) and len(ci) == 2:
+        return f"[{_fmt(ci[0])}, {_fmt(ci[1])}]"
+    return "—"
 
 
 def _fmt(value: Any, digits: int = 4) -> str:

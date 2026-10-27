@@ -9,7 +9,7 @@ which expert should see the request, the expert answers, and the graph returns t
 result. Experts can be trained by different people on ordinary hardware, versioned
 independently, and pruned when a deployment does not need them.
 
-> **Status: v0.5.0 — hardened, observable graph runtime.** The repository has a
+> **Status: v0.6.0 — hardened, observable, inspectable graph runtime.** The repository has a
 > runnable vertical slice — schema and semantic validation, router/worker/joiner/subgraph
 > execution, deterministic mock and local HTTP providers, hard budgets, traces, run manifests,
 > and offline replay — plus a loopback-only `mg ui` GUI for graph inspection, mock runs,
@@ -17,10 +17,11 @@ independently, and pruned when a deployment does not need them.
 > end-to-end, and safety gates; model changes go through impact analysis and immutable revisions
 > with atomic promotion and rollback. Trace-to-dataset export, a tested starter library, an
 > exact-match response cache, structured logs/metrics, and a security threat model are in place.
-> Resident/compiled targets and canaries are the next tracks. Live local-model validation passed
-> on CPU and on an RTX 3080 via Ollama Vulkan, including a composed run with 4GB pruning. Start
-> with [docs/tutorial.md](docs/tutorial.md) for the guided path,
-> [docs/quickstart.md](docs/quickstart.md) for the command reference, and
+> The static inspector, watch loop, target-aware diff, and comparison views make iteration
+> visible without a running model. Resident/compiled targets and canaries are the next tracks.
+> Live local-model validation passed on CPU and on an RTX 3080 via Ollama Vulkan, including a
+> composed run with 4GB pruning. Start with [docs/tutorial.md](docs/tutorial.md) for the guided
+> path, [docs/quickstart.md](docs/quickstart.md) for the command reference, and
 > [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) for what comes next.
 
 ## The idea in one picture
@@ -143,6 +144,23 @@ uv run mg data export --run runs/<run-id> --out /tmp/dataset \
 
 See [docs/iteration.md](docs/iteration.md) and [docs/training.md](docs/training.md).
 
+## Inspecting and iterating
+
+```text
+uv run mg watch graphs/hello-triage.graph.yaml --once
+uv run mg inspect --html runs/<run-id> --graph graphs/hello-triage.graph.yaml --out /tmp/run.html
+uv run mg graph diff graphs/hello-triage.graph.yaml /tmp/candidate.yaml
+uv run mg eval compare --baseline evals/baselines/e2e.json --candidate runs/evals/ci/e2e.json
+uv run mg inspect --html runs/<run-id> --graph graphs/hello-triage.graph.yaml \
+  --out /tmp/impact.html --change <change-id>
+```
+
+`mg watch` validates and mock-runs on save without loading a model. `mg inspect` produces one
+self-contained, offline HTML file with the graph, chosen path, pruned branches, artifacts, and
+totals; `--change` adds impact/stale/revision panels and `--compare RUN_B` adds a side-by-side
+run view. All action links are commands: the inspector never mutates a revision, change set, or
+run. See [docs/inspector.md](docs/inspector.md).
+
 ## Operations and safety
 
 Repeated provider calls hit a local exact-match cache by default; `--no-cache` bypasses it and
@@ -199,6 +217,7 @@ as injection immunity.
 | [`docs/execution.md`](docs/execution.md) | Scheduler, budgets, pruning, caching, replay, observability |
 | [`docs/security.md`](docs/security.md) | Threat model, untrusted input, redaction, trust policy, release checklist |
 | [`docs/observability.md`](docs/observability.md) | Structured logs, trace-derived metrics, `mg stats`, optional spans |
+| [`docs/inspector.md`](docs/inspector.md) | Static graph/trace inspector, impact/compare panels, future UI boundary |
 | [`docs/gpu-execution.md`](docs/gpu-execution.md) | GPU-resident and fused same-base backends, overhead accounting, limits |
 | [`docs/performance.md`](docs/performance.md) | LLM-parity analysis, options compared, overhead budget, compilation targets |
 | [`docs/iteration.md`](docs/iteration.md) | Iteration loops, swap impact, atomic revisions, canary/rollback |

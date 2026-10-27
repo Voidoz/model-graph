@@ -285,14 +285,15 @@ def derive_model_identity(manifest: ModelManifest) -> dict[str, str]:
 class RevisionStore:
     """A local, content-addressed store of immutable deployment revisions."""
 
-    def __init__(self, root: str | Path | None = None) -> None:
+    def __init__(self, root: str | Path | None = None, *, create: bool = True) -> None:
         self.root = Path(root).expanduser().resolve() if root is not None else default_store_dir()
-        self.revisions_dir.mkdir(parents=True, exist_ok=True)
-        self.changes_dir.mkdir(parents=True, exist_ok=True)
+        if create:
+            self.revisions_dir.mkdir(parents=True, exist_ok=True)
+            self.changes_dir.mkdir(parents=True, exist_ok=True)
 
     @classmethod
-    def open(cls, root: str | Path | None = None) -> RevisionStore:
-        return cls(root)
+    def open(cls, root: str | Path | None = None, *, create: bool = True) -> RevisionStore:
+        return cls(root, create=create)
 
     @property
     def revisions_dir(self) -> Path:
@@ -840,8 +841,14 @@ def _edge_key(edge: Any) -> tuple[str, str, str | None, str | None, int]:
     return (edge.from_, edge.to, edge.when, edge.artifact, edge.priority)
 
 
-def diff_graphs(before: CompiledGraph, after: CompiledGraph) -> dict[str, Any]:
-    """Structural diff of two compiled graphs (topology, prompts, bindings, policy)."""
+def diff_graphs(
+    before: CompiledGraph,
+    after: CompiledGraph,
+    *,
+    before_target: str | None = None,
+    after_target: str | None = None,
+) -> dict[str, Any]:
+    """Structural diff of two compiled graphs (topology, prompts, bindings, policy, target)."""
     before_nodes = set(before.nodes)
     after_nodes = set(after.nodes)
     added = sorted(after_nodes - before_nodes)
@@ -930,6 +937,69 @@ def diff_graphs(before: CompiledGraph, after: CompiledGraph) -> dict[str, Any]:
         "edges_removed": edges_removed,
         "edges_changed": edges_changed,
         "policy_changed": policy,
+        "target": {
+            "before": before_target,
+            "after": after_target,
+            "changed": before_target != after_target,
+        },
+        "routing_menu": _routing_menu(before, after, model_bindings, edges_added, edges_removed),
+    }
+
+
+def _routing_menu(
+    before: CompiledGraph,
+    after: CompiledGraph,
+    model_bindings: Sequence[Mapping[str, Any]],
+    edges_added: Sequence[Mapping[str, Any]],
+    edges_removed: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Highlight router-menu changes that a topology-only diff can obscure.
+
+    A router's menu changes when an outgoing edge is added/removed, when a routed model binding
+    changes (the card/cost/latency inputs), or when the router's own routing configuration or
+    routing card changes. This is a presentation aid over the same structural diff; it does not
+    claim a routing evaluation was run.
+    """
+    reasons: dict[str, set[str]] = {}
+
+    def note(router: str, reason: str) -> None:
+        reasons.setdefault(router, set()).add(reason)
+
+    after_routers = {node.id for node in after.nodes.values() if node.kind == NodeKind.router}
+    before_routers = {node.id for node in before.nodes.values() if node.kind == NodeKind.router}
+    for edge in edges_added:
+        source = str(edge.get("from"))
+        if source in after_routers:
+            note(source, f"route menu added edge to {edge.get('to')!r}")
+    for edge in edges_removed:
+        source = str(edge.get("from"))
+        if source in before_routers:
+            note(source, f"route menu removed edge to {edge.get('to')!r}")
+    for binding in model_bindings:
+        node = str(binding.get("node"))
+        for graph, routers in ((after, after_routers), (before, before_routers)):
+            for router in sorted(routers):
+                if any(edge.to == node for edge in graph.outgoing(router)):
+                    note(router, f"routed model binding changed for {node!r}")
+    for node_id in sorted(after_routers | before_routers):
+        changed_fields: set[str] = set()
+        old_node = before.nodes.get(node_id)
+        new_node = after.nodes.get(node_id)
+        if old_node is not None and new_node is not None:
+            old_view = _node_view(old_node)
+            new_view = _node_view(new_node)
+            changed_fields = {key for key in old_view if old_view[key] != new_view[key]}
+        if "routing" in changed_fields:
+            note(node_id, "routing configuration changed")
+        if "routing_card" in changed_fields:
+            note(node_id, "routing card changed")
+    return {
+        "schema": "modelgraph/routing-menu-diff/v0",
+        "changed": bool(reasons),
+        "routers": sorted(reasons),
+        "details": [
+            {"router": router, "reasons": sorted(reasons[router])} for router in sorted(reasons)
+        ],
     }
 
 
@@ -2350,13 +2420,21 @@ def bootstrap_revision(
 
 
 def format_diff(diff: Mapping[str, Any]) -> list[str]:
+    target = diff.get("target") or {}
+    target_changed = bool(target.get("changed"))
     lines = [
         f"graph diff: {diff['before']['id']}@{diff['before']['version']} -> "
         f"{diff['after']['id']}@{diff['after']['version']}",
         f"hash:       {diff['before']['hash']} -> {diff['after']['hash']}",
     ]
+    if target_changed or target.get("before") or target.get("after"):
+        lines.append(
+            f"target:     {target.get('before') or 'unspecified'} -> "
+            f"{target.get('after') or 'unspecified'}"
+        )
     if not diff.get("graph_changed"):
-        lines.append("result:     identical compiled graph")
+        suffix = "; target changed" if target_changed else ""
+        lines.append(f"result:     identical compiled graph{suffix}")
         return lines
     if diff["nodes_added"]:
         lines.append("nodes added:   " + ", ".join(item["node"] for item in diff["nodes_added"]))
@@ -2371,6 +2449,12 @@ def format_diff(diff: Mapping[str, Any]) -> list[str]:
         lines.append(
             f"binding:       {binding['node']}: {binding['from_ref']} -> {binding['to_ref']}"
         )
+    routing_menu = diff.get("routing_menu") or {}
+    if isinstance(routing_menu, Mapping) and routing_menu.get("changed"):
+        for item in routing_menu.get("details") or []:
+            lines.append(
+                f"routing menu:  {item.get('router')} ({'; '.join(item.get('reasons') or [])})"
+            )
     if diff["edges_added"]:
         lines.append("edges added:   " + str(len(diff["edges_added"])))
     if diff["edges_removed"]:
@@ -2511,6 +2595,141 @@ def status_report(store: RevisionStore, *, include_revisions: bool = False) -> d
         report["revisions"] = revisions
         report["previous_revisions"] = store.previous_revisions()
     return report
+
+
+def revision_timeline(
+    store: RevisionStore, *, change: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
+    """Return a read-only revision timeline: active, previous, candidate, and stale roles.
+
+    Roles are derived from hashes and the active pointer, never timestamps: ``stale`` means a
+    retained revision's graph hash differs from the active revision's graph hash. Compiled plan
+    and distilled student hashes are ``null`` in v0 (``plan_status`` names why), so the timeline
+    does not pretend those artifacts exist. The function performs no write.
+    """
+    active = store.active_revision_id()
+    pointer = store.active_pointer() or {}
+    previous_pointer = cast(str | None, pointer.get("previous_revision"))
+    previous_ids = set(store.previous_revisions())
+    candidate = str(change.get("candidate_revision")) if change else None
+    events = store.events()
+    revisions = store.list_revisions()
+    active_graph_hash = next(
+        (
+            str(manifest.get("graph", {}).get("hash"))
+            for manifest in revisions
+            if manifest.get("revision_id") == active
+        ),
+        None,
+    )
+    entries: list[dict[str, Any]] = []
+    known: set[str] = set()
+    for manifest in revisions:
+        revision_id = str(manifest.get("revision_id"))
+        if not revision_id:
+            continue
+        known.add(revision_id)
+        graph = cast(Mapping[str, Any], manifest.get("graph") or {})
+        graph_hash = str(graph.get("hash") or "") or None
+        components = cast(Mapping[str, Any], manifest.get("components") or {})
+        roles: list[str] = []
+        if revision_id == active:
+            roles.append("active")
+        if revision_id == previous_pointer or revision_id in previous_ids:
+            roles.append("previous")
+        if revision_id == candidate:
+            roles.append("candidate")
+        if (
+            active_graph_hash is not None
+            and revision_id != active
+            and revision_id != candidate
+            and graph_hash is not None
+            and graph_hash != active_graph_hash
+        ):
+            roles.append("stale")
+        if not roles:
+            roles.append("retained")
+        entries.append(
+            {
+                "revision_id": revision_id,
+                "graph_id": graph.get("id"),
+                "graph_hash": graph_hash,
+                "target": manifest.get("target"),
+                "created_at": manifest.get("created_at"),
+                "bootstrap": bool(manifest.get("bootstrap")),
+                "roles": roles,
+                "active": revision_id == active,
+                "previous": "previous" in roles,
+                "candidate": revision_id == candidate,
+                "stale": "stale" in roles,
+                "missing": False,
+                "components": {
+                    "plan_status": components.get("plan_status"),
+                    "plan_hash": components.get("plan_hash"),
+                    "student_hash": components.get("student_hash"),
+                },
+                "markers": _revision_markers(events, revision_id),
+            }
+        )
+    for role, missing_id in (("previous", previous_pointer), ("candidate", candidate)):
+        if not missing_id or missing_id in known:
+            continue
+        known.add(missing_id)
+        entries.append(
+            {
+                "revision_id": missing_id,
+                "graph_id": None,
+                "graph_hash": None,
+                "target": None,
+                "created_at": None,
+                "bootstrap": False,
+                "roles": [role],
+                "active": False,
+                "previous": role == "previous",
+                "candidate": role == "candidate",
+                "stale": False,
+                "missing": True,
+                "components": {"plan_status": None, "plan_hash": None, "student_hash": None},
+                "markers": _revision_markers(events, missing_id),
+            }
+        )
+    entries.sort(key=lambda item: (str(item.get("created_at") or ""), str(item["revision_id"])))
+    return {
+        "schema": "modelgraph/revision-timeline/v0",
+        "store": str(store.root),
+        "active_revision": active,
+        "previous_revision": previous_pointer,
+        "candidate_revision": candidate,
+        "entries": entries,
+        "notes": [
+            "active/previous/candidate come from the active pointer and the change set; "
+            "stale is hash-based (a retained, non-active, non-candidate revision whose graph "
+            "hash differs from the active revision) and never timestamp-based.",
+            "Compiled plan and distilled student hashes are null in v0. plan_status records "
+            "not_applicable or not_built instead of inventing an artifact hash.",
+        ],
+    }
+
+
+def _revision_markers(
+    events: Sequence[Mapping[str, Any]], revision_id: str
+) -> list[dict[str, Any]]:
+    markers: list[dict[str, Any]] = []
+    for event in events:
+        if str(event.get("revision")) != revision_id:
+            continue
+        kind = str(event.get("event") or "")
+        if kind not in {"promote", "rollback"}:
+            continue
+        markers.append(
+            {
+                "event": kind,
+                "ts": event.get("ts"),
+                "reason": event.get("reason"),
+                "previous_revision": event.get("previous_revision"),
+            }
+        )
+    return markers
 
 
 def annotate_run_trace(run_dir: str | Path, manifest: Mapping[str, Any]) -> bool:

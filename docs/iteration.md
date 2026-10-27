@@ -270,16 +270,17 @@ router and a second runtime path, which must be measured rather than assumed.
 
 | Command | Purpose |
 | --- | --- |
-| `mg watch GRAPH` | Validate on save; rerun mock/trace; fast authoring loop |
-| `mg graph diff A B` | Topology, prompt, model-binding, and policy diff |
+| `mg watch GRAPH [--once] [--interval S]` | Validate on save; rerun with the mock provider; fast authoring loop |
+| `mg graph diff A B [--before-target T] [--after-target T]` | Topology, prompt, model-binding, policy, and deployment-target diff |
 | `mg swap node NODE --to MODEL --dry-run` | Propose a swap and show impact |
 | `mg change explain` | Compatibility, invalidations, eval coverage, VRAM, risk |
-| `mg eval compare` | Candidate vs incumbent with confidence intervals and slices |
+| `mg eval compare` | Candidate vs incumbent with CIs, slices, and an oracle reference when available |
 | `mg compile --target ...` | Build the deployment target and report invalidations |
 | `mg bench parity` | Quality-matched latency/throughput/cost/VRAM report |
 | `mg deploy --shadow/--canary` | Stage a revision |
 | `mg promote`, `mg rollback` | Atomic revision changes |
 | `mg status --stale` | Plans, caches, students, and revisions that no longer match source |
+| `mg inspect --html ... [--change ...] [--compare ...]` | Static impact panel, stale badges, timeline, and side-by-side runs |
 
 ### 7.2 Inspector
 
@@ -372,20 +373,27 @@ modularizing and go back to a single prompt.
 The rule that ties them together: **the source graph is what you iterate; the deployment
 revision is what you run. A swap is a new revision with an impact report, not a mutation.**
 
-## 12. Implementation status (v0, T-0038)
+## 12. Implementation status (v0, T-0038/T-0040)
 
 This section records what the repository actually implements today. It does not change the
 accepted semantics above; where v0 can only approximate a concept, the approximation is named.
 
 ### 12.1 What is implemented
 
-- `src/modelgraph/revision.py` — change sets, graph diff, impact analysis, an immutable local
-  revision store, an atomic active pointer, promote/rollback, evidence coverage, and retention.
+- `src/modelgraph/revision.py` — change sets, graph diff (including routing-menu highlighting),
+  impact analysis, an immutable local revision store, an atomic active pointer,
+  promote/rollback, evidence coverage, retention, and a read-only revision timeline.
+- `src/modelgraph/watch.py` — the offline authoring loop used by `mg watch`: validate/compile,
+  deterministic mock execution, content-based save detection, and previous-success comparison.
+- `src/modelgraph/inspector.py` — the T-0028 inspector plus the T-0040 impact panel, stale
+  artifact badges, revision timeline, and side-by-side run comparison.
 - `schemas/change-set.schema.json` — the JSON contract for a persisted change set.
-- CLI: `mg graph diff`, `mg swap node`, `mg change create|list|show|explain`, `mg promote`,
-  `mg rollback`, and `mg status --revisions`.
-- Tests: `tests/iteration/test_revisions.py`, `tests/iteration/test_changesets.py`, and
-  `tests/iteration/test_cli_changesets.py`. They use the mock provider and never touch the
+- CLI: `mg watch`, `mg graph diff`, `mg swap node`, `mg change create|list|show|explain`,
+  `mg promote`, `mg rollback`, `mg status --revisions`, and
+  `mg inspect --html ... [--change ...] [--compare ...]`.
+- Tests: `tests/iteration/test_revisions.py`, `tests/iteration/test_changesets.py`,
+  `tests/iteration/test_cli_changesets.py`, `tests/experience/test_inspector.py`, and
+  `tests/experience/test_iteration_ux.py`. They use the mock provider and never touch the
   network.
 
 The store defaults to `.mg/revisions/` (git-ignored) and is overridable with `--store` or
@@ -528,3 +536,158 @@ change set references it. `RevisionStore.gc(dry_run=True)` reports eligible and 
 revisions; the CLI does not delete automatically. This is the conservative default recorded
 for `Q-018`; reference-counted GC across eval reports and the rest of the artifact store remains
 a follow-up.
+
+## 13. One concrete v0 loop: author, improve, evaluate, promote
+
+This is one complete iteration using the commands implemented today. It is offline and uses
+the deterministic mock provider for authoring and evaluation. Replace placeholder ids
+(`<base-rev>`, `<change-id>`, `<candidate-rev>`, `<run-id>`) with the values printed by the
+previous command.
+
+### 13.1 Author with `mg watch`
+
+```text
+uv run mg watch examples/hello-triage.graph.yaml --once
+uv run mg watch examples/hello-triage.graph.yaml --interval 1.0
+```
+
+The first command validates, compiles, and mock-runs once. The second keeps watching: on start
+and after each content-changing save it validates, compiles, and mock-runs again. The report
+shows the graph hash, the chosen path and decisions, artifact names/hashes, tokens, cost,
+provider latency, and whether the last successful cycle differs. The run is recorded under
+`--runs-dir` (default `runs/`).
+
+Two honest limits:
+
+- `mg watch` always uses `MockProvider`. It never selects a manifest's `ollama` or remote
+  provider, never loads weights, and never calls the network. A save that needs a real model
+  must go through `mg run` or an eval command.
+- The loop reports recorded provider latency, not wall-clock time, so the JSON is deterministic.
+  Wall-clock time is not reproducible and would make two identical cycles compare unequal.
+
+`--json` prints one machine-readable cycle document (compact JSONL in loop mode):
+
+```text
+uv run mg watch examples/hello-triage.graph.yaml --once --json
+```
+
+A validation failure exits non-zero in `--once` mode and prints the compiler errors. In loop
+mode the error is printed and the watcher keeps polling; `Ctrl-C` stops it cleanly with exit 0.
+
+### 13.2 Improve and inspect the impact
+
+```text
+cp examples/hello-triage.graph.yaml /tmp/hello-triage.candidate.yaml
+# edit the candidate YAML: prompt, topology, routing edge, or model binding
+uv run mg watch /tmp/hello-triage.candidate.yaml --once
+uv run mg graph diff examples/hello-triage.graph.yaml /tmp/hello-triage.candidate.yaml
+```
+
+`mg graph diff` reports topology, prompts, model bindings, policy, and deployment-target
+differences, including the routing-menu changes that a topology-only reading can miss. Revision
+ids carry their own target; for graph files, state it explicitly:
+
+```text
+uv run mg graph diff base.graph.yaml candidate.graph.yaml \
+  --before-target portable --after-target resident
+```
+
+Bootstrap the active revision once, then propose the candidate as a change set:
+
+```text
+uv run mg promote --graph examples/hello-triage.graph.yaml --store .mg/revisions
+
+# Preview the candidate without persisting a revision or change set.
+uv run mg change create --graph /tmp/hello-triage.candidate.yaml \
+  --base-revision <base-rev> --store .mg/revisions --dry-run
+
+# Persist it, then explain it.
+uv run mg change create --graph /tmp/hello-triage.candidate.yaml \
+  --base-revision <base-rev> --store .mg/revisions \
+  --summary "tighten the router prompt"
+uv run mg change explain <change-id> --store .mg/revisions
+```
+
+`mg change explain` is the impact report: change class, base/tokenizer compatibility, required
+evaluation levels and current coverage, invalidations, VRAM admission, rollback target, and
+risks.
+
+Render the same stored impact report in the inspector, next to a recorded run:
+
+```text
+uv run mg inspect runs/<run-id> --html \
+  --graph examples/hello-triage.graph.yaml \
+  --out /tmp/hello-triage.html \
+  --change <change-id> --store .mg/revisions
+
+uv run mg inspect runs/<run-id> --html \
+  --graph examples/hello-triage.graph.yaml \
+  --out /tmp/hello-triage-compare.html \
+  --compare runs/<other-run-id>
+```
+
+The page's embedded `modelgraph/inspector/v0` document and the read-only/no-network boundary are
+documented in [`inspector.md`](inspector.md).
+
+The inspector shows the impact before promotion, stale badges for plan/cache/student artifacts,
+a revision timeline with active/previous/candidate/stale roles, and safe follow-up commands as
+text. It never promotes, rolls back, recompiles, or re-distills. In v0 there is no compiled plan
+or distilled student artifact, so those badges read `not_applicable` or `none` rather than
+inventing a hash.
+
+### 13.3 Evaluate with uncertainty
+
+```text
+uv run mg eval node --suite evals/mock/js-specialist --provider mock \
+  --reports-dir runs/evals/ci --json > runs/evals/ci/node.json
+
+uv run mg eval compare \
+  --baseline evals/baselines/node.json \
+  --candidate runs/evals/ci/node.json \
+  --reports-dir runs/evals/ci/comparisons
+```
+
+`mg eval compare` prints the primary delta and its 95% bootstrap interval, cost and latency
+deltas with intervals, the gate checks, and per-slice paired deltas with per-slice intervals.
+When both reports carry e2e data and the candidate carries oracle or best-single baselines, it
+also prints a candidate/baseline/oracle/best-single reference table; this is a comparison of
+measured reports, not a claim that the oracle is deployable. The persisted comparison report
+keeps the same data under `metrics`, `comparisons`, `gate`, `costs`, `latency`, and `slices`.
+The CLI `--json` output additionally includes `reference` when available; the persisted
+`report.json` does not. A slice is a tag or a `domain:`/`difficulty:` metadata dimension from
+the suite cases.
+
+### 13.4 Promote with evidence, or dry-run first
+
+```text
+uv run mg promote --revision <candidate-rev> --store .mg/revisions \
+  --evidence runs/evals/ci/node.json \
+  --dry-run
+
+uv run mg promote --revision <candidate-rev> --store .mg/revisions \
+  --evidence runs/evals/ci/node.json
+```
+
+The dry-run validates compatibility and evidence coverage without moving the active pointer.
+The real promotion writes `active.json` atomically and records the previous revision for
+rollback. A change whose required evidence is missing is refused, not silently promoted:
+
+```text
+uv run mg promote --revision <candidate-rev> --store .mg/revisions --dry-run
+# blocked: missing passing evidence for e2e (and routing, when the menu changed)
+
+uv run mg rollback --to <base-rev> --store .mg/revisions --dry-run
+uv run mg rollback --to <base-rev> --store .mg/revisions
+```
+
+### 13.5 What the loop intentionally does not do in v0
+
+- It does not build compiled or fused plans, prefix/route caches, or distilled students. Impact
+  analysis and the inspector mark those artifacts `not_applicable`/`none`; they never fake a
+  plan or student hash.
+- It does not promote a `fused`, `compiled`, or `distilled` target, because no plan exists to
+  make active. Use `--target portable` until a compiled-target ticket builds one.
+- It does not auto-promote, auto-recompile, or auto-re-distill. The inspector's follow-up
+  commands are text; promotion remains an explicit, evidence-gated command.
+- It does not add a filesystem-watch dependency. `mg watch` polls the graph file's bytes with
+  the standard library and reruns only when the content changes.

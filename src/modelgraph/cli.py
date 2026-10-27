@@ -27,6 +27,7 @@ from modelgraph.evaluation import (
 )
 from modelgraph.evaluation.compare import compare_against_baseline, gate_summary
 from modelgraph.evaluation.report import default_report_dir
+from modelgraph.inspector import build_inspection, render_inspector_html
 from modelgraph.paths import cache_dir as default_cache_dir
 from modelgraph.paths import runs_dir as default_runs_dir
 from modelgraph.providers import build_provider
@@ -61,6 +62,7 @@ from modelgraph.revision import (
     promotion_plan,
     propose_graph_change,
     propose_swap,
+    revision_timeline,
     status_for_change,
     status_report,
 )
@@ -71,6 +73,7 @@ from modelgraph.runtime.manifest import read_run_manifest, recover_interrupted_r
 from modelgraph.runtime.replay import replay_run
 from modelgraph.runtime.trace import read_events
 from modelgraph.security import profile_security_warnings
+from modelgraph.watch import WatchSession, format_watch_report, watch_loop
 
 app = typer.Typer(
     name="mg",
@@ -267,6 +270,81 @@ def eval_e2e(
     _emit_eval_report(report, as_json=as_json, fail_on_gate=fail_on_gate)
 
 
+def _load_report_document(path: Path) -> dict[str, Any] | None:
+    """Load a report JSON or a report directory's ``report.json`` for a reference view."""
+    source = path / "report.json" if path.is_dir() else path
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _quality_reference(baseline: Path, candidate: Path) -> dict[str, Any] | None:
+    """Candidate/baseline/oracle quality rows when the reports carry e2e baselines."""
+    candidate_data = _load_report_document(candidate)
+    baseline_data = _load_report_document(baseline)
+    if candidate_data is None:
+        return None
+    candidate_e2e = candidate_data.get("e2e")
+    baseline_e2e = baseline_data.get("e2e") if baseline_data else None
+    if not isinstance(candidate_e2e, dict) or not isinstance(baseline_e2e, dict):
+        return None
+    baselines = candidate_e2e.get("baselines")
+    if not isinstance(baselines, dict):
+        return None
+
+    def row(data: dict[str, Any] | None) -> dict[str, Any]:
+        if not isinstance(data, dict):
+            return {}
+        metrics = data.get("metrics") or {}
+        return {
+            "task_success": metrics.get("task_success"),
+            "task_success_ci95": metrics.get("task_success_ci95"),
+            "validity": metrics.get("validity"),
+            "cost_per_task_usd": metrics.get("cost_per_task_usd"),
+            "latency_p50_seconds": metrics.get("latency_p50_seconds"),
+        }
+
+    reference: dict[str, Any] = {
+        "candidate": row(candidate_data),
+        "baseline": row(baseline_data),
+    }
+    found_reference = False
+    for name in ("oracle_routing", "best_single"):
+        entry = baselines.get(name)
+        if isinstance(entry, dict) and entry.get("available", True):
+            reference[name] = {
+                "task_success": entry.get("task_success"),
+                "task_success_ci95": entry.get("task_success_ci95"),
+                "validity": entry.get("validity"),
+                "cost_per_task_usd": entry.get("cost_per_task_usd"),
+                "latency_p50_seconds": entry.get("latency_p50_seconds"),
+            }
+            found_reference = True
+    if not found_reference:
+        # Printing a header that promises "vs oracle" when no oracle/best-single row exists
+        # is worse than omitting the optional table.
+        return None
+    return reference
+
+
+def _print_quality_reference(reference: dict[str, Any]) -> None:
+    typer.echo("reference: candidate vs incumbent vs oracle (e2e)")
+    for name in ("candidate", "baseline", "oracle_routing", "best_single"):
+        row = reference.get(name)
+        if not isinstance(row, dict) or row.get("task_success") is None:
+            continue
+        ci = row.get("task_success_ci95")
+        ci_text = f" {_format_ci(ci)}" if isinstance(ci, list) and len(ci) == 2 else ""
+        typer.echo(
+            f"  {name:<15} tasks={_format_rate(row.get('task_success'))}{ci_text} "
+            f"validity={_format_rate(row.get('validity'))} "
+            f"cost/case=${_format_number(row.get('cost_per_task_usd'), 6)} "
+            f"p50={_format_number(row.get('latency_p50_seconds'), 3)}s"
+        )
+
+
 @eval_app.command("compare")
 def eval_compare(
     baseline: Path = typer.Option(
@@ -315,10 +393,13 @@ def eval_compare(
     except ModelGraphError as exc:
         typer.echo(f"[{exc.code}] {exc.message}", err=True)
         raise typer.Exit(code=3) from exc
+    reference = _quality_reference(baseline, candidate)
     if as_json:
         payload = report.to_dict()
         if report.report_dir is not None:
             payload["report_dir"] = str(report.report_dir)
+        if reference is not None:
+            payload["reference"] = reference
         typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
     else:
         _print_eval_report(report)
@@ -326,6 +407,8 @@ def eval_compare(
             if line.startswith(("gate:", "report:")):
                 continue
             typer.echo(line)
+        if reference is not None:
+            _print_quality_reference(reference)
     if fail_on_gate and (report.gate is None or report.gate.get("passed") is not True):
         raise typer.Exit(code=1)
 
@@ -387,6 +470,14 @@ def _print_eval_report(report: EvalReport) -> None:
             f"cost delta ${_format_number(report.costs.get('delta_per_task_usd'), 6)}/case; "
             f"latency delta p50 {_format_number(report.latency.get('delta_p50_seconds'), 3)}s"
         )
+        typer.echo(
+            f"cost CI:  {_format_ci(report.costs.get('delta_ci95'))} per case (95% bootstrap)"
+        )
+        typer.echo(
+            "latency CI: "
+            f"{_format_ci(report.latency.get('delta_p50_ci95'))} seconds paired p50 "
+            "(95% bootstrap)"
+        )
     else:
         parts = [
             f"tasks={_format_rate(metrics.get('task_success'))}",
@@ -418,6 +509,23 @@ def _print_eval_report(report: EvalReport) -> None:
                 f"band:     <={_format_number(band.get('max_cost_usd'), 6)} USD -> "
                 f"{band.get('winner')}"
             )
+    if report.level == "comparison" and report.slices:
+        typer.echo("slices:   paired delta and 95% bootstrap CI (W/L/T per slice)")
+        for name in sorted(report.slices):
+            entry = report.slices[name]
+            typer.echo(
+                f"  {name}: n={entry.get('cases', 0)} "
+                f"baseline={_format_rate(entry.get('baseline_primary'))} "
+                f"candidate={_format_rate(entry.get('candidate_primary'))} "
+                f"delta={_format_signed(entry.get('primary_delta'))} "
+                f"ci={_format_ci(entry.get('primary_delta_ci95'))} "
+                f"W/L/T={entry.get('wins', 0)}/{entry.get('losses', 0)}/"
+                f"{entry.get('ties', 0)} "
+                f"cost_delta=${_format_number(entry.get('cost_delta_per_task_usd'), 6)} "
+                f"cost_ci={_format_ci(entry.get('cost_delta_ci95'))} "
+                f"latency_p50_delta={_format_number(entry.get('latency_delta_p50_seconds'), 3)}s "
+                f"latency_ci={_format_ci(entry.get('latency_delta_ci95'))}"
+            )
     typer.echo(f"failures: {len(report.failures)}")
     for failure in report.failures[:5]:
         typer.echo(f"  - {failure.get('case_id')}: {failure.get('reason')}")
@@ -431,6 +539,18 @@ def _format_rate(value: Any) -> str:
 
 def _format_number(value: Any, digits: int) -> str:
     return f"{value:.{digits}f}" if isinstance(value, (int, float)) else "—"
+
+
+def _format_signed(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return "—"
+    return f"{value:+.4f}"
+
+
+def _format_ci(value: Any) -> str:
+    if isinstance(value, list) and len(value) == 2:
+        return f"[{_format_signed(value[0])}, {_format_signed(value[1])}]"
+    return "—"
 
 
 def _registry(model_dirs: list[Path]) -> Registry:
@@ -808,6 +928,67 @@ def run(
         raise typer.Exit(code=3)
 
 
+def _emit_watch_report(report: dict[str, Any], *, as_json: bool, compact: bool) -> None:
+    if as_json:
+        typer.echo(
+            json.dumps(
+                report,
+                indent=None if compact else 2,
+                separators=(",", ":") if compact else None,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return
+    for line in format_watch_report(report):
+        typer.echo(line)
+
+
+@app.command()
+def watch(
+    graph: Path = typer.Argument(..., help="Graph YAML file to validate, compile, and mock-run."),
+    once: bool = typer.Option(
+        False, "--once", help="Run one cycle and exit; non-zero on validation or run failure."
+    ),
+    interval: float = typer.Option(
+        1.0, "--interval", min=0.01, help="Seconds between graph-file content checks."
+    ),
+    registry_dir: list[Path] = typer.Option([], "--registry", help="Model registry directory."),
+    runs_directory: Path = typer.Option(
+        default_runs_dir(), "--runs-dir", help="Directory for watch run artifacts."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable cycle result."),
+) -> None:
+    """Watch a graph and rerun it with the mock provider on every save.
+
+    The watch loop never selects a real provider, never loads model weights, and adds no
+    filesystem-watch dependency: it polls the graph file's content with the standard library.
+    """
+    session = WatchSession(
+        graph,
+        registry=_registry(registry_dir),
+        runs_dir=runs_directory,
+    )
+    if once:
+        report = session.poll_once()
+        if report is None:  # pragma: no cover - the first poll always runs
+            typer.echo("watch: no cycle was run", err=True)
+            raise typer.Exit(code=1)
+        _emit_watch_report(report, as_json=as_json, compact=False)
+        if report["status"] != "ok":
+            raise typer.Exit(code=1 if report["status"] == "invalid" else 3)
+        return
+    try:
+        watch_loop(
+            session,
+            interval=interval,
+            emit=lambda report: _emit_watch_report(report, as_json=as_json, compact=True),
+        )
+    except KeyboardInterrupt:
+        if not as_json:
+            typer.echo("\nwatch: stopped")
+
+
 @app.command()
 def replay(
     run: Path = typer.Argument(..., help="Run directory."),
@@ -875,6 +1056,147 @@ def ui(
         typer.echo("\nstopping...")
     finally:
         server.server_close()
+
+
+@app.command()
+def inspect(
+    run: Path = typer.Argument(..., help="Recorded run directory."),
+    graph: Path = typer.Option(..., "--graph", help="Authored graph YAML (may have been pruned)."),
+    out: Path = typer.Option(..., "--out", help="Output HTML file."),
+    html: bool = typer.Option(
+        False, "--html", help="Write a self-contained, offline HTML inspector."
+    ),
+    registry_dir: list[Path] = typer.Option([], "--registry", help="Model registry directory."),
+    change_id: str | None = typer.Option(
+        None, "--change", help="Change set id to show as a read-only impact panel."
+    ),
+    store_path: Path | None = typer.Option(
+        None, "--store", help="Revision store directory for --change."
+    ),
+    compare_run: Path | None = typer.Option(
+        None, "--compare", help="Second recorded run directory for a side-by-side comparison."
+    ),
+) -> None:
+    """Write a static, self-contained HTML inspector for a recorded run.
+
+    ``--change`` adds the stored impact report, hash-based stale badges, and revision
+    timeline. ``--compare`` adds a side-by-side run comparison. Both are read-only: the
+    inspector never promotes, rolls back, recompiles, or rewrites a revision or run.
+    """
+    if not html:
+        typer.echo("error: mg inspect currently requires --html", err=True)
+        raise typer.Exit(code=2)
+    if store_path is not None and change_id is None:
+        typer.echo("error: --store requires --change", err=True)
+        raise typer.Exit(code=2)
+    if not run.is_dir():
+        typer.echo(f"run directory not found: {run}", err=True)
+        raise typer.Exit(code=1)
+    if compare_run is not None and not compare_run.is_dir():
+        typer.echo(f"comparison run directory not found: {compare_run}", err=True)
+        raise typer.Exit(code=1)
+    try:
+        manifest = read_run_manifest(run)
+        if compare_run is not None:
+            read_run_manifest(compare_run)
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    result = compile_graph(
+        graph,
+        registry=_registry(registry_dir),
+        strict_models=True,
+        graph_paths=[graph.parent],
+    )
+    if not result.ok or result.graph is None:
+        for message in result.errors:
+            typer.echo(message, err=True)
+        raise typer.Exit(code=1)
+
+    if not out.parent.exists() or not out.parent.is_dir():
+        typer.echo(f"output directory not found: {out.parent}", err=True)
+        raise typer.Exit(code=2)
+    if out.exists() and out.is_dir():
+        typer.echo(f"output path is a directory: {out}", err=True)
+        raise typer.Exit(code=2)
+
+    graph_info = manifest.get("graph")
+    graph_info = graph_info if isinstance(graph_info, dict) else {}
+    if graph_info.get("hash") != result.graph.graph_hash:
+        typer.echo(
+            "note: authored graph hash differs from the recorded run; "
+            "the inspector will show the prune report from the run manifest",
+            err=True,
+        )
+
+    change: dict[str, Any] | None = None
+    impact: dict[str, Any] | None = None
+    timeline: dict[str, Any] | None = None
+    if change_id is not None:
+        store_root = store_path if store_path is not None else default_store_dir()
+        if not Path(store_root).is_dir():
+            typer.echo(
+                f"revision store not found: {store_root}; run `mg status --revisions` or pass "
+                "--store",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        try:
+            # create=False keeps this inspection truly read-only: a missing store is an error
+            # above, and opening an existing store must not add revisions/ or changes/.
+            store = RevisionStore(store_root, create=False)
+            change = store.load_change(change_id)
+            impact = store.load_impact(change_id)
+            timeline = revision_timeline(store, change=change)
+        except ModelGraphError as exc:
+            typer.echo(f"[{exc.code}] {exc.message}", err=True)
+            raise typer.Exit(code=1) from exc
+
+    try:
+        model = build_inspection(
+            run,
+            result.graph,
+            change=change,
+            impact=impact,
+            timeline=timeline,
+            compare_run=compare_run,
+        )
+        rendered = render_inspector_html(model)
+        out.write_text(rendered, encoding="utf-8")
+    except ModelGraphError as exc:
+        typer.echo(f"[{exc.code}] {exc.message}", err=True)
+        raise typer.Exit(code=1) from exc
+    except OSError as exc:
+        typer.echo(f"cannot write inspector: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    totals = model["totals"]
+    typer.echo(f"inspector: {out}")
+    typer.echo(f"run:       {model['summary']['run_id']} ({model['summary']['outcome']})")
+    typer.echo(
+        f"content:   nodes={len(model['nodes'])} artifacts={len(model['artifacts'])} "
+        f"tokens={totals['total_tokens']} cost=${totals['cost_usd']:.6f} "
+        f"elapsed={totals['elapsed_seconds']:.3f}s"
+    )
+    iteration = model.get("iteration")
+    if isinstance(iteration, dict):
+        change_record = cast(dict[str, Any], iteration.get("change") or {})
+        impact_record = cast(dict[str, Any], iteration.get("impact") or {})
+        typer.echo(
+            f"impact:    change={change_record.get('change_id')} "
+            f"class={impact_record.get('change_class')} "
+            f"status={change_record.get('status')}"
+        )
+    comparison = model.get("compare")
+    if isinstance(comparison, dict):
+        summary = cast(dict[str, Any], comparison.get("summary") or {})
+        typer.echo(
+            f"compare:   same_inputs={comparison.get('same_inputs')} "
+            f"same_graph={comparison.get('same_graph')} "
+            f"node_differences={summary.get('node_differences')} "
+            f"artifact_differences={summary.get('artifact_differences')}"
+        )
 
 
 @trace_app.command("show")
@@ -1024,6 +1346,14 @@ def _resolve_graph_ref(ref: str, store: RevisionStore, registry: Registry) -> Co
     return result.graph
 
 
+def _revision_target(ref: str, store: RevisionStore) -> str | None:
+    """Read a revision's deployment target; graph paths have no target metadata."""
+    if not ref.startswith("rev_"):
+        return None
+    value = store.load_revision(ref).get("target")
+    return str(value) if value is not None else None
+
+
 def _change_payload(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "dry_run": result.get("dry_run"),
@@ -1040,15 +1370,30 @@ def graph_diff(
     after: str = typer.Argument(..., help="Graph path, graph id@version, or revision id."),
     registry_dir: list[Path] = typer.Option([], "--registry", help="Model registry directory."),
     store_path: Path | None = typer.Option(None, "--store", help="Revision store directory."),
+    before_target: str | None = typer.Option(
+        None,
+        "--before-target",
+        help="Deployment target for the left side (defaults for revisions).",
+    ),
+    after_target: str | None = typer.Option(
+        None,
+        "--after-target",
+        help="Deployment target for the right side (defaults for revisions).",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable diff."),
 ) -> None:
-    """Show topology, prompt, model-binding, and policy differences between two graphs."""
+    """Show topology, prompt, binding, policy, and deployment-target differences."""
     try:
         store = _revision_store(store_path)
         registry = _registry(registry_dir)
         before_graph = _resolve_graph_ref(before, store, registry)
         after_graph = _resolve_graph_ref(after, store, registry)
-        diff = diff_graphs(before_graph, after_graph)
+        diff = diff_graphs(
+            before_graph,
+            after_graph,
+            before_target=before_target or _revision_target(before, store),
+            after_target=after_target or _revision_target(after, store),
+        )
     except ModelGraphError as exc:
         typer.echo(f"[{exc.code}] {exc.message}", err=True)
         raise typer.Exit(code=3) from exc

@@ -208,10 +208,11 @@ works offline; without the profile, `auto`/`ollama` uses the configured local mo
 - Deterministic mock provider and OpenAI-compatible/Ollama HTTP adapters.
 - Content-addressed artifacts, trace, envelope, run manifest, and replay.
 - CLI commands: `validate`, `compile`, `run`, `replay`, `trace show`, `runs`, `models`, `ui`,
-  `eval`, `data export`, `status`, `graph diff`, `swap`, `change`, `promote`, `rollback`, and
-  `stats`.
+  `eval`, `data export`, `status`, `graph diff`, `swap`, `change`, `promote`, `rollback`,
+  `stats`, `inspect`, and `watch`.
 - Node/routing/e2e evaluation, safety gates, baselines, and offline contribution checks.
 - Change sets, impact analysis, immutable revisions, atomic promotion, and rollback.
+- Static offline inspector, watch loop, target-aware diff, and comparison slices/CIs.
 - Consented, redacted trace-to-dataset export with frozen grouped splits.
 - Exact-match response cache (`on|off|readonly`, `--no-cache`) with avoided-cost reporting.
 - Structured JSONL/console logs, trace-derived metrics, and optional OpenTelemetry spans.

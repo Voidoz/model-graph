@@ -286,7 +286,7 @@ immutable deployment revision that served the request:
   "prune_hash": "sha256:...",
   "budget": {"max_steps": 8, "max_depth": 3, "max_total_tokens": 32000, "max_cost_usd": 0.05},
   "seed": 42,
-  "environment": {"python_version": "3.12.6", "platform": "Linux-...", "providers": [{"name": "ollama", "version": "0.5.0"}], "hostname": "workstation", "pid": 4242},
+  "environment": {"python_version": "3.12.6", "platform": "Linux-...", "providers": [{"name": "ollama", "version": "0.6.0"}], "hostname": "workstation", "pid": 4242},
   "started_at": "2026-10-22T10:00:00Z",
   "finished_at": "2026-10-22T10:00:07Z",
   "usage": {"steps": 3, "input_tokens": 2011, "output_tokens": 842, "total_tokens": 2853, "cost_usd": 0.0},

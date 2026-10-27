@@ -139,6 +139,23 @@ def compare_reports(
     )
     primary_ci = bootstrap_ci(deltas, resamples=bootstrap_resamples, seed=seed)
     cost_ci = bootstrap_ci(cost_deltas, resamples=bootstrap_resamples, seed=seed)
+    # ``delta_p50_*`` is a median, so its interval must resample the median too. Bootstrapping
+    # the mean and labelling it p50 made the point estimate and interval describe two different
+    # statistics (and could hide a bimodal latency regression behind a small mean).
+    latency_p50 = percentile(latency_deltas, 0.5)
+    latency_ci = bootstrap_ci(
+        latency_deltas,
+        statistic=lambda sample: percentile(sample, 0.5),
+        resamples=bootstrap_resamples,
+        seed=seed,
+    )
+    slices = _comparison_slices(
+        candidate_data,
+        baseline_data,
+        common,
+        bootstrap_resamples=bootstrap_resamples,
+        seed=seed,
+    )
     candidate_costs = [float(case.get("cost_usd", 0.0)) for case in candidate_data["cases"]]
     baseline_costs = [float(case.get("cost_usd", 0.0)) for case in baseline_data["cases"]]
     candidate_latencies = [
@@ -252,7 +269,7 @@ def compare_reports(
         gate=None,
         cases=paired,
         failures=failures,
-        slices={},
+        slices=slices,
         protocol_errors={},
         costs={
             "baseline_per_task_usd": mean_or_none(baseline_costs),
@@ -263,7 +280,8 @@ def compare_reports(
         latency={
             "baseline_p95_seconds": percentile(baseline_latencies, 0.95),
             "candidate_p95_seconds": percentile(candidate_latencies, 0.95),
-            "delta_p50_seconds": mean_or_none(latency_deltas),
+            "delta_p50_seconds": latency_p50,
+            "delta_p50_ci95": latency_ci,
             "paired_deltas": len(latency_deltas),
         },
         usage=candidate_data.get("usage", {}),
@@ -367,6 +385,121 @@ def _case_value(report: dict[str, Any], case: dict[str, Any]) -> float | None:
             return 1.0 if case.get("oracle", {}).get("ambiguous") else 0.0
         return None
     return None
+
+
+def _slice_keys(case: dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    tags = case.get("tags")
+    if isinstance(tags, list):
+        keys.update(str(tag) for tag in tags if tag)
+    metadata = case.get("metadata")
+    if isinstance(metadata, dict):
+        for dimension in ("domain", "difficulty"):
+            value = metadata.get(dimension)
+            if value is not None:
+                keys.add(f"{dimension}:{value}")
+    return keys
+
+
+def _comparison_slices(
+    candidate_data: dict[str, Any],
+    baseline_data: dict[str, Any],
+    common: list[str],
+    *,
+    bootstrap_resamples: int,
+    seed: int,
+) -> dict[str, dict[str, Any]]:
+    """Per-slice paired deltas with seeded bootstrap intervals.
+
+    The incumbent slice tables are model-level aggregates. A comparison needs paired deltas,
+    so this recomputes the same tags/dimensions over the shared case ids and reports uncertainty
+    per slice. A slice can be omitted if neither report labels any case with it.
+    """
+    candidate_cases = {str(case.get("case_id")): case for case in candidate_data["cases"]}
+    baseline_cases = {str(case.get("case_id")): case for case in baseline_data["cases"]}
+    keys: set[str] = set()
+    for case_id in common:
+        keys.update(_slice_keys(candidate_cases[case_id]))
+        keys.update(_slice_keys(baseline_cases[case_id]))
+    direction = str(candidate_data.get("primary_metric", {}).get("direction", "max"))
+    slices: dict[str, dict[str, Any]] = {}
+    for key in sorted(keys):
+        case_ids = [
+            case_id
+            for case_id in common
+            if key in _slice_keys(candidate_cases[case_id])
+            or key in _slice_keys(baseline_cases[case_id])
+        ]
+        if not case_ids:
+            continue
+        candidate_values: list[float] = []
+        baseline_values: list[float] = []
+        value_deltas: list[float] = []
+        cost_deltas: list[float] = []
+        latency_deltas: list[float] = []
+        wins = losses = ties = 0
+        candidate_costs: list[float] = []
+        baseline_costs: list[float] = []
+        candidate_latencies: list[float] = []
+        baseline_latencies: list[float] = []
+        for case_id in case_ids:
+            candidate_case = candidate_cases[case_id]
+            baseline_case = baseline_cases[case_id]
+            candidate_value = _case_value(candidate_data, candidate_case)
+            baseline_value = _case_value(baseline_data, baseline_case)
+            if candidate_value is not None:
+                candidate_values.append(candidate_value)
+            if baseline_value is not None:
+                baseline_values.append(baseline_value)
+            if candidate_value is not None and baseline_value is not None:
+                delta = candidate_value - baseline_value
+                value_deltas.append(delta)
+                improvement = delta if direction == "max" else -delta
+                if improvement > 1e-9:
+                    wins += 1
+                elif improvement < -1e-9:
+                    losses += 1
+                else:
+                    ties += 1
+            candidate_cost = float(candidate_case.get("cost_usd", 0.0))
+            baseline_cost = float(baseline_case.get("cost_usd", 0.0))
+            candidate_costs.append(candidate_cost)
+            baseline_costs.append(baseline_cost)
+            cost_deltas.append(candidate_cost - baseline_cost)
+            candidate_latency = float(candidate_case.get("latency_seconds", 0.0))
+            baseline_latency = float(baseline_case.get("latency_seconds", 0.0))
+            candidate_latencies.append(candidate_latency)
+            baseline_latencies.append(baseline_latency)
+            latency_deltas.append(candidate_latency - baseline_latency)
+        slices[key] = {
+            "primary_metric": candidate_data.get("primary_metric", {}).get("name"),
+            "cases": len(case_ids),
+            "baseline_primary": mean_or_none(baseline_values),
+            "candidate_primary": mean_or_none(candidate_values),
+            "primary_delta": mean_or_none(value_deltas),
+            "primary_delta_ci95": (
+                bootstrap_ci(value_deltas, resamples=bootstrap_resamples, seed=seed)
+                if value_deltas
+                else None
+            ),
+            "wins": wins,
+            "losses": losses,
+            "ties": ties,
+            "baseline_cost_per_task_usd": mean_or_none(baseline_costs),
+            "candidate_cost_per_task_usd": mean_or_none(candidate_costs),
+            "cost_delta_per_task_usd": mean_or_none(cost_deltas),
+            "cost_delta_ci95": bootstrap_ci(cost_deltas, resamples=bootstrap_resamples, seed=seed),
+            "baseline_latency_p50_seconds": percentile(baseline_latencies, 0.5),
+            "candidate_latency_p50_seconds": percentile(candidate_latencies, 0.5),
+            "latency_delta_p50_seconds": percentile(latency_deltas, 0.5),
+            "latency_delta_ci95": bootstrap_ci(
+                latency_deltas,
+                statistic=lambda sample: percentile(sample, 0.5),
+                resamples=bootstrap_resamples,
+                seed=seed,
+            ),
+        }
+    return slices
 
 
 def _reproduce_command(candidate_path: Path | None, baseline_path: Path | None) -> str:
