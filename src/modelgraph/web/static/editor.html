@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Graph editor · Model Graph</title>
+    <meta
+      name="description"
+      content="Edit a Model Graph YAML graph, validate it, run it with the mock provider, or save it as a local candidate."
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/editor.css" />
+    <script src="/static/common.js" defer></script>
+    <script src="/static/editor.js" defer></script>
+  </head>
+  <body class="editor-page">
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <header class="site-header">
+      <div class="wrap" id="mg-nav"></div>
+    </header>
+    <main id="main" class="wrap page">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Dashboard</a>
+        <span aria-hidden="true">/</span>
+        <a id="editor-graph-link" href="graph.html">Graph</a>
+        <span aria-hidden="true">/</span>
+        <span>Editor</span>
+      </nav>
+
+      <section class="page-head">
+        <div>
+          <p class="eyebrow">Authoring</p>
+          <h1>Graph editor</h1>
+          <p class="lede">
+            Edit the YAML, validate against the real compiler, run a mock smoke test, then save a
+            candidate under <code>runs/gui-candidates/</code>. Saving never changes the live graph
+            or the authored file.
+          </p>
+        </div>
+        <div class="page-actions">
+          <button class="button secondary" id="new-graph" type="button">New graph</button>
+          <a class="button secondary" id="view-graph" href="graph.html">View graph</a>
+        </div>
+      </section>
+
+      <p class="editor-status" id="editor-status" role="status" aria-live="polite">
+        Loading graph…
+      </p>
+      <div class="mg-error" id="editor-error" role="alert" hidden></div>
+
+      <div class="editor-layout">
+        <section class="card editor-pane" aria-labelledby="yaml-heading">
+          <div class="card-head">
+            <h2 id="yaml-heading">Graph YAML</h2>
+            <p>Comments and unknown fields are validated by the same path as <code>mg validate</code>.</p>
+          </div>
+          <label class="editor-label" for="graph-yaml">Graph document</label>
+          <textarea
+            id="graph-yaml"
+            class="graph-yaml"
+            spellcheck="false"
+            autocomplete="off"
+            autocapitalize="off"
+            aria-describedby="yaml-help"
+          ></textarea>
+          <p class="editor-help" id="yaml-help">
+            Use the exact model ids from the registry. A saved candidate is not live until it is
+            reviewed and promoted through the normal revision workflow.
+          </p>
+          <div class="editor-toolbar">
+            <button class="button" id="validate-graph" type="button">Validate</button>
+            <button class="button secondary" id="save-candidate" type="button">Save candidate</button>
+          </div>
+          <div class="editor-run">
+            <label for="task-input">Smoke-test task</label>
+            <input
+              id="task-input"
+              type="text"
+              value="Write a debounce function in TypeScript."
+              autocomplete="off"
+            />
+            <button class="button secondary" id="run-candidate" type="button">
+              Run with mock
+            </button>
+          </div>
+        </section>
+
+        <aside class="editor-side">
+          <section class="card" aria-labelledby="validation-heading">
+            <h2 id="validation-heading">Validation</h2>
+            <div id="validation-output" aria-live="polite">
+              <p class="muted">Run validation to see errors and warnings.</p>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="preview-heading">
+            <h2 id="preview-heading">Compiled preview</h2>
+            <div id="graph-preview" aria-live="polite">
+              <p class="muted">A valid graph shows its nodes and edges here.</p>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="candidate-heading">
+            <h2 id="candidate-heading">Candidate</h2>
+            <div id="candidate-output" aria-live="polite">
+              <p class="muted">Saving writes a candidate; it does not promote it.</p>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="run-heading">
+            <h2 id="run-heading">Mock run</h2>
+            <div id="run-output" aria-live="polite">
+              <p class="muted">Run the candidate with the deterministic mock provider.</p>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+    <footer class="site-footer wrap">
+      <p>
+        The editor is loopback-only. It never accepts a filesystem path from the browser and never
+        executes graph content.
+      </p>
+    </footer>
+  </body>
+</html>

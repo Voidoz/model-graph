@@ -11,7 +11,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass
+import shutil
+import subprocess
+import tempfile
+import threading
+import time
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -29,6 +34,7 @@ from modelgraph.registry import Registry
 from modelgraph.runtime.engine import run_graph
 from modelgraph.runtime.replay import replay_run
 from modelgraph.runtime.trace import read_events
+from modelgraph.util import sha256_text
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +46,90 @@ METHOD_NOT_ALLOWED = "MG-9003"
 REPLAY_MISMATCH = "MG-9004"
 INTERNAL_ERROR = "MG-9005"
 REQUEST_TOO_LARGE = "MG-9006"
+MODEL_PULL_ERROR = "MG-9007"
 
 DEFAULT_RUN_LIMIT = 20
 MAX_RUN_LIMIT = 500
+MAX_GRAPH_BYTES = 500_000
+MAX_PULL_JOBS = 2
 PROVIDERS = frozenset({"mock", "auto"})
+PULL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*(?::[A-Za-z0-9._-]+)?$")
 
 _CODE_RE = re.compile(r"MG-\d{4}")
 _ALLOWED_HASH_MISMATCH = "graph hash mismatch allowed by flag"
+
+NEW_GRAPH_TEMPLATE = """\
+apiVersion: modelgraph/v0
+kind: Graph
+metadata:
+  id: new-graph
+  name: New graph
+  version: 1.0.0
+  description: Describe what this graph does.
+spec:
+  entry: triage
+  inputs:
+    - name: task
+      type: text
+      required: true
+      description: The user request.
+  exit: [answer]
+  defaults:
+    max_steps: 6
+    max_depth: 2
+    max_cost_usd: 0.05
+    max_wall_seconds: 120
+    max_total_tokens: 24000
+  nodes:
+    - id: triage
+      kind: router
+      description: Decides which worker should handle the request.
+      model: router-small
+      reads: [task]
+      routing:
+        confidence_threshold: 0.6
+        on_low_confidence: fallback
+    - id: answer
+      kind: worker
+      description: Produces the final answer.
+      model: coder-7b
+      reads: [task]
+      instruction: |
+        Complete the request and put the result in the artifact named "answer".
+      writes:
+        - name: answer
+          type: text
+  edges:
+    - from: triage
+      to: answer
+      when: The request needs a direct answer.
+      examples:
+        - Answer this request.
+      artifact: text
+      priority: 0
+"""
+
+
+@dataclass
+class PullJob:
+    """One local Ollama pull operation; the server never runs a shell."""
+
+    job_id: str
+    model: str
+    status: str = "running"
+    lines: list[str] = field(default_factory=list)
+    error: str | None = None
+    created_at: float = field(default_factory=time.time)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "job_id": self.job_id,
+            "model": self.model,
+            "status": self.status,
+            "lines": list(self.lines[-40:]),
+            "error": self.error,
+            "created_at": self.created_at,
+        }
 
 
 @dataclass(frozen=True)
@@ -55,6 +138,8 @@ class WebContext:
 
     registry: Registry
     runs_dir: Path
+    pull_jobs: dict[str, PullJob] = field(default_factory=dict)
+    pull_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 @dataclass(frozen=True)
@@ -119,8 +204,16 @@ def _handle_get(
         return _list_graphs(context)
     if len(route) == 2 and route[0] == "graphs":
         return _graph_detail(context, route[1])
+    if len(route) == 3 and route[0] == "graphs" and route[2] == "source":
+        return _graph_source(context, route[1])
+    if route == ["graph-template"]:
+        return ApiResponse(200, {"yaml": NEW_GRAPH_TEMPLATE})
     if route == ["models"]:
         return _list_models(context)
+    if route == ["models", "installed"]:
+        return _installed_models()
+    if len(route) == 3 and route[0] == "models" and route[1] == "pull":
+        return _pull_status(context, route[2])
     if route == ["runs"]:
         return _list_runs(context, query)
     if len(route) >= 2 and route[0] == "runs":
@@ -139,6 +232,14 @@ def _handle_post(context: WebContext, route: list[str], body: bytes) -> ApiRespo
         return _create_run(context, body)
     if len(route) == 3 and route[0] == "runs" and route[2] == "replay":
         return _replay(context, route[1], body)
+    if route == ["graphs", "validate"]:
+        return _validate_graph_source(context, body)
+    if route == ["graphs", "candidates"]:
+        return _save_candidate(context, body)
+    if route == ["graphs", "run-candidate"]:
+        return _run_candidate(context, body)
+    if route == ["models", "pull"]:
+        return _start_pull(context, body)
     raise ApiError(404, NOT_FOUND, f"unknown API endpoint {route!r}")
 
 
@@ -183,6 +284,243 @@ def _graph_detail(context: WebContext, graph_id: str) -> ApiResponse:
             "warnings": list(graph.warnings),
         },
     )
+
+
+def _graph_source(context: WebContext, graph_id: str) -> ApiResponse:
+    source = context.registry.resolve_graph(graph_id)
+    if source is None or not source.is_file():
+        raise ApiError(404, NOT_FOUND, f"unknown graph {graph_id!r}")
+    try:
+        text = source.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ApiError(500, INTERNAL_ERROR, "graph source is unreadable") from exc
+    return ApiResponse(
+        200,
+        {
+            "graph_id": graph_id,
+            "file": source.name,
+            "yaml": text,
+        },
+    )
+
+
+def _source_text(payload: dict[str, Any]) -> str:
+    text = payload.get("yaml")
+    if not isinstance(text, str) or not text.strip():
+        raise ApiError(400, INVALID_REQUEST, "yaml is required")
+    if len(text.encode("utf-8")) > MAX_GRAPH_BYTES:
+        raise ApiError(413, REQUEST_TOO_LARGE, "graph YAML is too large")
+    return text
+
+
+def _compile_yaml(
+    context: WebContext,
+    text: str,
+    *,
+    strict: bool,
+) -> tuple[CompiledGraph | None, list[str], list[str]]:
+    with tempfile.TemporaryDirectory(prefix="mg-gui-graph-") as directory:
+        path = Path(directory) / "candidate.graph.yaml"
+        path.write_text(text, encoding="utf-8")
+        try:
+            result = compile_graph(
+                path,
+                registry=context.registry,
+                strict_models=strict,
+                graph_paths=[Path(directory)],
+            )
+        except ModelGraphError as exc:
+            return None, [f"[{exc.code}] {exc.message}"], []
+    graph = result.graph
+    if graph is not None:
+        # Keep the temporary compile path out of the browser preview and the run manifest.
+        graph = replace(graph, source="gui-candidate")
+    errors = [message.replace(str(path), "candidate.graph.yaml") for message in result.errors]
+    warnings = [message.replace(str(path), "candidate.graph.yaml") for message in result.warnings]
+    return graph, errors, warnings
+
+
+def _validate_graph_source(context: WebContext, body: bytes) -> ApiResponse:
+    payload = _json_object(body)
+    text = _source_text(payload)
+    graph, errors, warnings = _compile_yaml(context, text, strict=False)
+    return ApiResponse(
+        200,
+        {
+            "valid": graph is not None and not errors,
+            "errors": errors,
+            "warnings": warnings,
+            "graph": graph.to_dict() if graph is not None else None,
+        },
+    )
+
+
+def _save_candidate(context: WebContext, body: bytes) -> ApiResponse:
+    payload = _json_object(body)
+    text = _source_text(payload)
+    graph, errors, warnings = _compile_yaml(context, text, strict=True)
+    if graph is None or errors:
+        raise ApiError(
+            400,
+            _first_code(errors, "MG-1001"),
+            "candidate is invalid: " + "; ".join(errors),
+        )
+    graph_id = graph.id
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", graph_id):
+        raise ApiError(400, INVALID_REQUEST, "graph id is not safe for a local candidate file")
+    digest = sha256_text(text)
+    directory = context.runs_dir / "gui-candidates"
+    directory.mkdir(parents=True, exist_ok=True)
+    filename = f"{graph_id}-{digest.split(':', 1)[-1][:12]}.graph.yaml"
+    destination = directory / filename
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.write_text(text, encoding="utf-8")
+    temporary.replace(destination)
+    return ApiResponse(
+        201,
+        {
+            "candidate_id": f"cand_{digest.split(':', 1)[-1][:16]}",
+            "graph_id": graph_id,
+            "path": str(destination.relative_to(context.runs_dir)),
+            "hash": digest,
+            "warnings": warnings,
+        },
+    )
+
+
+def _run_candidate(context: WebContext, body: bytes) -> ApiResponse:
+    payload = _json_object(body)
+    text = _source_text(payload)
+    task = payload.get("task")
+    provider_name = payload.get("provider", "mock")
+    if not isinstance(task, str) or not task.strip():
+        raise ApiError(400, INVALID_REQUEST, "task is required")
+    if not isinstance(provider_name, str) or provider_name not in PROVIDERS:
+        raise ApiError(400, INVALID_REQUEST, "provider must be 'mock' or 'auto'")
+    graph, errors, _ = _compile_yaml(context, text, strict=True)
+    if graph is None or errors:
+        raise ApiError(
+            400,
+            _first_code(errors, "MG-1001"),
+            "candidate is invalid: " + "; ".join(errors),
+        )
+
+    def factory(manifest: ModelManifest) -> Provider:
+        if provider_name == "mock":
+            return MockProvider(None, max_context=manifest.spec.context_window)
+        return build_provider(manifest)
+
+    outcome = run_graph(graph, task, factory, runs_dir=context.runs_dir)
+    error = outcome.error or {}
+    code = error.get("code")
+    if isinstance(code, str) and code.startswith("MG-3"):
+        raise ApiError(502, code, str(error.get("message") or "provider failure"))
+    return ApiResponse(201, outcome.to_dict())
+
+
+def _installed_models() -> ApiResponse:
+    executable = shutil.which("ollama")
+    if executable is None:
+        return ApiResponse(
+            200,
+            {
+                "available": False,
+                "installed": [],
+                "detail": "ollama is not on PATH",
+            },
+        )
+    try:
+        completed = subprocess.run(
+            [executable, "list"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ApiResponse(
+            200,
+            {"available": False, "installed": [], "detail": "ollama list did not complete"},
+        )
+    installed: list[str] = []
+    for line in completed.stdout.splitlines()[1:]:
+        name = line.strip().split(maxsplit=1)[0] if line.strip() else ""
+        if name:
+            installed.append(name)
+    return ApiResponse(
+        200,
+        {
+            "available": completed.returncode == 0,
+            "installed": sorted(set(installed)),
+            "detail": None if completed.returncode == 0 else "ollama list failed",
+        },
+    )
+
+
+def _start_pull(context: WebContext, body: bytes) -> ApiResponse:
+    payload = _json_object(body)
+    name = payload.get("name")
+    if not isinstance(name, str) or not PULL_NAME_RE.fullmatch(name.strip()):
+        raise ApiError(
+            400,
+            INVALID_REQUEST,
+            "model name must be a plain Ollama tag such as qwen2.5:1.5b-instruct",
+        )
+    name = name.strip()
+    executable = shutil.which("ollama")
+    if executable is None:
+        raise ApiError(503, MODEL_PULL_ERROR, "ollama is not on PATH")
+    with context.pull_lock:
+        running = sum(job.status == "running" for job in context.pull_jobs.values())
+        if running >= MAX_PULL_JOBS:
+            raise ApiError(429, MODEL_PULL_ERROR, "too many model pulls are already running")
+        job_id = f"pull_{sha256_text(name + str(time.time()))[7:19]}"
+        job = PullJob(job_id=job_id, model=name)
+        context.pull_jobs[job_id] = job
+    thread = threading.Thread(
+        target=_pull_worker,
+        args=(executable, name, job, context.pull_lock),
+        daemon=True,
+    )
+    thread.start()
+    return ApiResponse(202, job.to_dict())
+
+
+def _pull_status(context: WebContext, job_id: str) -> ApiResponse:
+    with context.pull_lock:
+        job = context.pull_jobs.get(job_id)
+        if job is None:
+            raise ApiError(404, NOT_FOUND, f"unknown pull job {job_id!r}")
+        return ApiResponse(200, job.to_dict())
+
+
+def _pull_worker(executable: str, name: str, job: PullJob, lock: threading.Lock) -> None:
+    try:
+        process = subprocess.Popen(
+            [executable, "pull", name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except OSError as exc:
+        with lock:
+            job.status = "failed"
+            job.error = f"could not start ollama pull: {exc}"
+        return
+    if process.stdout is not None:
+        for line in process.stdout:
+            with lock:
+                job.lines.append(line.rstrip())
+                if len(job.lines) > 200:
+                    del job.lines[: len(job.lines) - 200]
+    returncode = process.wait()
+    with lock:
+        if returncode == 0:
+            job.status = "succeeded"
+        else:
+            job.status = "failed"
+            job.error = f"ollama pull exited with status {returncode}"
 
 
 def _list_models(context: WebContext) -> ApiResponse:

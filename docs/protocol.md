@@ -562,7 +562,7 @@ Adapters must:
 
 | Adapter | Transport | Why |
 | --- | --- | --- |
-| `mock` | In-process | Deterministic tests, CI, examples ([T-0005](../.scratch/tickets/T-0005-mock-provider.md)) |
+| `mock` | In-process | Deterministic tests, CI, examples (T-0005) |
 | `openai-compatible` | HTTP | Covers hosted APIs and many local servers |
 | `ollama` | HTTP | Easiest local path for contributors |
 | `llama.cpp` server | HTTP | Broad local model support, JSON/grammar options |
@@ -608,6 +608,6 @@ across providers if its nodes reference models that exist in each registry.
    engine. Artifact blobs are content-addressed run data and are not rewritten.
 6. **Untrusted models are a supply-chain risk.** A model manifest is not a trust
    statement; registry signatures and review are a later phase
-   ([T-0026](../.scratch/tickets/T-0026-model-registry.md)).
+   (T-0026).
 7. **No network by default in tests.** The mock adapter and capability filters make
    offline CI the norm, not an afterthought.

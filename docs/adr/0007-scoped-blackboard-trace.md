@@ -78,10 +78,10 @@ an append-only, content-addressed trace.**
 
 ## Follow-ups
 
-- [T-0006](../../.scratch/tickets/T-0006-envelope-artifacts.md) implements the envelope and
+- T-0006 implements the envelope and
   artifact store.
-- [T-0011](../../.scratch/tickets/T-0011-trace-replay.md) implements trace capture and replay.
-- [T-0029](../../.scratch/tickets/T-0029-security-hardening.md) implements redaction and
+- T-0011 implements trace capture and replay.
+- T-0029 implements redaction and
   secret scanning.
 - Measure shadowing and missing-read rates in real graphs; if they are common, improve the
   validator rather than loosening the runtime.

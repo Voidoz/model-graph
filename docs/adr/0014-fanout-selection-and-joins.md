@@ -96,7 +96,7 @@ Details:
 
 ## Follow-ups
 
-- [T-0018](../../.scratch/tickets/T-0018-fanout-ensemble.md) implements the contract,
+- T-0018 implements the contract,
   scheduler, tests, and docs.
 - Evaluate ensembles against the best single branch before promoting them.
 - A future partial-join option needs a contract field, a recorded event, and an eval story;

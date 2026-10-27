@@ -69,8 +69,8 @@ justifies it.
 
 ## Follow-ups
 
-- [T-0001](../../.scratch/tickets/T-0001-dev-environment.md) establishes the toolchain.
-- [T-0002](../../.scratch/tickets/T-0002-contract-tests.md) adds JSON Schema/Pydantic parity
+- T-0001 establishes the toolchain.
+- T-0002 adds JSON Schema/Pydantic parity
   tests and a fixture corpus.
 - Revisit the daemon API shape after the CLI runtime is stable.
 - Keep the Python API surface small; the CLI and documents are the stable contract.

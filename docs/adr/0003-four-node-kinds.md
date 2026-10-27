@@ -76,8 +76,8 @@ Rules that follow:
 
 ## Follow-ups
 
-- [T-0003](../../.scratch/tickets/T-0003-graph-compiler.md) implements the validator rules
+- T-0003 implements the validator rules
   for node kinds.
-- [T-0009](../../.scratch/tickets/T-0009-worker-joiner.md) implements worker/joiner executors.
-- [T-0017](../../.scratch/tickets/T-0017-subgraphs.md) implements subgraph boundaries.
+- T-0009 implements worker/joiner executors.
+- T-0017 implements subgraph boundaries.
 - Revisit tool/IO nodes only after v0 with a threat model and a sandboxing plan (`Q-004`).

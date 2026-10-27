@@ -45,7 +45,7 @@ uv sync
 uv run mg version
 ```
 
-Expected: `0.6.0` (or the current version). The test suite is offline:
+Expected: `1.0.0` (or the current version). The test suite is offline:
 
 ```text
 uv run pytest -q
@@ -520,7 +520,7 @@ different graph.
 | Change models safely | [iteration.md](iteration.md) |
 | Work on the runtime | [architecture.md](architecture.md) and [development.md](development.md) |
 | Use the local GUI | [gui.md](gui.md) |
-| See what to build next | [../.scratch/tickets/BOARD.md](../.scratch/tickets/BOARD.md) and [roadmap.md](roadmap.md) |
+| See what to build next | [README.md](../README.md) and [development.md](development.md) |
 
 Run the checks before sending a change:
 

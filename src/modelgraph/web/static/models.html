@@ -29,6 +29,38 @@
         </p>
       </header>
 
+      <section class="models-section" id="pull-section" aria-labelledby="pull-heading">
+        <div class="models-section__head">
+          <div>
+            <h2 id="pull-heading">Pull a local model</h2>
+            <p class="models-section__hint">
+              Download an Ollama tag onto this machine. Pulling is local to Ollama; the GUI never
+              sends the model anywhere. Use the exact tag shown by <code>ollama list</code> or
+              the model manifest.
+            </p>
+          </div>
+          <p class="models-status" id="installed-status" role="status" aria-live="polite">
+            Checking installed models…
+          </p>
+        </div>
+        <form class="pull-form" id="pull-form">
+          <label class="pull-label" for="pull-name">Ollama model tag</label>
+          <input
+            id="pull-name"
+            name="name"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="qwen2.5:1.5b-instruct"
+            required
+          />
+          <button class="models-button" id="pull-submit" type="submit">Pull model</button>
+        </form>
+        <p class="models-status" id="pull-status" role="status" aria-live="polite"></p>
+        <pre class="pull-log" id="pull-log" hidden aria-live="polite"></pre>
+        <div class="installed-models" id="installed-models" aria-live="polite"></div>
+      </section>
+
       <section class="models-section" id="models-section" aria-labelledby="models-heading">
         <div class="models-section__head">
           <div>

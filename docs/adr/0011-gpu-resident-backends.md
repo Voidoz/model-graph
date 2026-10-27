@@ -101,9 +101,9 @@ cross a graph boundary as a new artifact type.
 
 ## Follow-ups
 
-- [T-0031](../../.scratch/tickets/T-0031-resident-backend.md): backend contract and B1 spike.
-- [T-0032](../../.scratch/tickets/T-0032-fused-multilora.md): B2 and adapter manifest support.
-- [T-0033](../../.scratch/tickets/T-0033-transition-benchmark.md): transition measurement and
+- T-0031: backend contract and B1 spike.
+- T-0032: B2 and adapter manifest support.
+- T-0033: transition measurement and
   gates.
 - B4 (distilled single-model target) is defined in [ADR-0012](0012-compiled-deployment-targets.md); it is not a multi-model GPU backend.
 - Revisit B3 only after B1/B2 data and with a new ADR.

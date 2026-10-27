@@ -135,7 +135,7 @@ def test_export_produces_schema_valid_jsonl_and_manifest(tmp_path: Path) -> None
     assert routing["output"]["chosen_decision"] == "route"
 
     spec = bundle.manifest["spec"]
-    assert spec["sources"][0]["license"] == "unknown"
+    assert spec["sources"][0]["license"] == "GPL-3.0-or-later"
     assert spec["counts"]["total"] == 2
     assert spec["examples"]["node"] == 1
     assert spec["examples"]["routing"] == 1

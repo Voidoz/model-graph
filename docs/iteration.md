@@ -368,7 +368,7 @@ modularizing and go back to a single prompt.
 - [gpu-execution.md](gpu-execution.md) — backend residency, prefix caches, and admission.
 - [evaluation.md](evaluation.md) — candidate comparison, gates, and uncertainty.
 - [training.md](training.md) — adapters, specialist retraining, and graph distillation.
-- [roadmap.md](roadmap.md) — Phase 4 change management and Phase 5 hot swap/canary.
+- [README.md](../README.md) — current release status and supported scope.
 
 The rule that ties them together: **the source graph is what you iterate; the deployment
 revision is what you run. A swap is a new revision with an impact report, not a mutation.**

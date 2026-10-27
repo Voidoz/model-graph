@@ -22,7 +22,7 @@ See [ADR-0011](adr/0011-gpu-resident-backends.md).
 | **Runtime equivalence** — no weight reload, no HTTP, no process hop, no re-tokenization | Mostly | Resident heterogeneous models remove reloads and HTTP; fused multi-LoRA also removes re-tokenization. |
 | **Physical equivalence** — one forward pass, one weight set, one KV stream | No (except true MoE/merging) | Each node is still an invocation. Independent models cannot share KV. A fused adapter graph shares weights but not one continuous forward pass. |
 
-The project should only claim the first two, and only after [T-0033](../.scratch/tickets/T-0033-transition-benchmark.md)
+The project should only claim the first two, and only after T-0033
 measures them.
 
 ## 2. Where the time actually goes
@@ -277,13 +277,13 @@ The full option comparison, overhead budget, and parity gates are in
 
 | Ticket | Deliverable |
 | --- | --- |
-| [T-0031](../.scratch/tickets/T-0031-resident-backend.md) | Backend abstraction + resident heterogeneous spike |
-| [T-0032](../.scratch/tickets/T-0032-fused-multilora.md) | Fused same-base multi-LoRA backend |
-| [T-0033](../.scratch/tickets/T-0033-transition-benchmark.md) | Transition and LLM-parity benchmark, gates |
-| [T-0034](../.scratch/tickets/T-0034-aot-plan-compiler.md) | AOT plan, prompt/tokenization, prefix KV, memory plan |
-| [T-0035](../.scratch/tickets/T-0035-fast-routing.md) | Classifier/head routing, flattening, route cache |
-| [T-0036](../.scratch/tickets/T-0036-batched-scheduler.md) | Multi-request scheduler and continuous batching |
-| [T-0037](../.scratch/tickets/T-0037-graph-distillation.md) | Distilled single-model deployment target |
+| T-0031 | Backend abstraction + resident heterogeneous spike |
+| T-0032 | Fused same-base multi-LoRA backend |
+| T-0033 | Transition and LLM-parity benchmark, gates |
+| T-0034 | AOT plan, prompt/tokenization, prefix KV, memory plan |
+| T-0035 | Classifier/head routing, flattening, route cache |
+| T-0036 | Multi-request scheduler and continuous batching |
+| T-0037 | Distilled single-model deployment target |
 
 Phase 5 is post-v0: it must not delay the usable local release. It is the performance track
 that makes the "single model" experience measurable. Not every graph should run on every target;

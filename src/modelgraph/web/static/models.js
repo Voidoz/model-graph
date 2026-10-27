@@ -28,6 +28,8 @@
     outcomes: [],
     outcomeFilter: "all",
     loadingRuns: false,
+    pullJob: null,
+    pullTimer: null,
   };
 
   function byId(id) {
@@ -62,6 +64,12 @@
       filter.addEventListener("change", onOutcomeFilterChange);
     }
 
+    const pullForm = byId("pull-form");
+    if (pullForm) {
+      pullForm.addEventListener("submit", startPull);
+    }
+
+    loadInstalledModels();
     loadModels();
     loadRuns();
   }
@@ -173,6 +181,132 @@
     }
     box.replaceChildren(...children);
     box.hidden = false;
+  }
+
+  /* ------------------------------------------------------------- local pulls */
+
+  async function loadInstalledModels() {
+    const target = byId("installed-models");
+    const status = byId("installed-status");
+    if (!target || !status) return;
+    target.replaceChildren();
+    setStatus(status, "Checking installed models…");
+    try {
+      const payload = await MG.api("/api/models/installed");
+      const installed = Array.isArray(payload && payload.installed) ? payload.installed : [];
+      if (payload && payload.available === false) {
+        setStatus(status, "Ollama is unavailable.");
+        target.appendChild(
+          MG.el(
+            "p",
+            { class: "models-state__detail" },
+            MG.text(payload.detail || "Start Ollama to pull and run local models."),
+          ),
+        );
+        return;
+      }
+      setStatus(
+        status,
+        installed.length
+          ? `${installed.length} installed Ollama model${installed.length === 1 ? "" : "s"}.`
+          : "No Ollama models installed yet.",
+      );
+      if (installed.length) {
+        target.replaceChildren(
+          ...installed.map((name) =>
+            MG.el("span", { class: "installed-model", title: name }, MG.text(name)),
+          ),
+        );
+      }
+    } catch (failure) {
+      setStatus(status, "Installed models unavailable.");
+      target.appendChild(
+        MG.el("p", { class: "models-state__detail" }, MG.text(describeError(failure, ""))),
+      );
+    }
+  }
+
+  async function startPull(event) {
+    if (event && typeof event.preventDefault === "function") event.preventDefault();
+    if (state.pullJob) return;
+    const input = byId("pull-name");
+    const button = byId("pull-submit");
+    const status = byId("pull-status");
+    const log = byId("pull-log");
+    const name = input && typeof input.value === "string" ? input.value.trim() : "";
+    if (!name) {
+      setStatus(status, "Enter an Ollama model tag first.");
+      if (input) input.focus();
+      return;
+    }
+    if (button) button.disabled = true;
+    if (log) {
+      log.hidden = true;
+      log.textContent = "";
+    }
+    setStatus(status, `Starting pull for ${name}…`);
+    try {
+      const job = await MG.api("/api/models/pull", {
+        method: "POST",
+        body: { name },
+      });
+      state.pullJob = job;
+      renderPullJob(job);
+      schedulePullPoll(job.job_id);
+    } catch (failure) {
+      state.pullJob = null;
+      setStatus(status, describeError(failure, "Could not start the model pull."));
+      if (button) button.disabled = false;
+    }
+  }
+
+  function schedulePullPoll(jobId) {
+    if (state.pullTimer) window.clearTimeout(state.pullTimer);
+    state.pullTimer = window.setTimeout(() => pollPull(jobId), 900);
+  }
+
+  async function pollPull(jobId) {
+    const button = byId("pull-submit");
+    try {
+      const job = await MG.api(`/api/models/pull/${encodeURIComponent(jobId)}`);
+      state.pullJob = job;
+      renderPullJob(job);
+      if (job.status === "running") {
+        schedulePullPoll(jobId);
+        return;
+      }
+      if (button) button.disabled = false;
+      state.pullJob = null;
+      state.pullTimer = null;
+      if (job.status === "succeeded") {
+        await loadInstalledModels();
+      }
+    } catch (failure) {
+      if (button) button.disabled = false;
+      state.pullJob = null;
+      state.pullTimer = null;
+      setStatus(byId("pull-status"), describeError(failure, "Model pull status failed."));
+    }
+  }
+
+  function renderPullJob(job) {
+    const status = byId("pull-status");
+    const log = byId("pull-log");
+    const lines = Array.isArray(job && job.lines) ? job.lines : [];
+    const current = job && job.status ? String(job.status) : "running";
+    if (log) {
+      log.hidden = lines.length === 0;
+      log.textContent = lines.join("\n");
+      log.scrollTop = log.scrollHeight;
+    }
+    if (!status) return;
+    if (current === "running") {
+      setStatus(status, `Pulling ${job.model}… this can take a while.`);
+    } else if (current === "succeeded") {
+      setStatus(status, `Pulled ${job.model}. It is available to Ollama and local graphs.`);
+    } else {
+      setStatus(status, job.error || `Pull failed for ${job.model}.`);
+    }
   }
 
   /* ------------------------------------------------------------------ models */

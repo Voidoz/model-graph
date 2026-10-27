@@ -68,9 +68,9 @@ Types in v0: `text`, `code`, `patch`, `plan`, `json`, `report`.
 
 ## Follow-ups
 
-- [T-0002](../../.scratch/tickets/T-0002-contract-tests.md) pins the type enum and tests
+- T-0002 pins the type enum and tests
   compatibility.
-- [T-0009](../../.scratch/tickets/T-0009-worker-joiner.md) implements runtime type checks and
+- T-0009 implements runtime type checks and
   mismatch events.
 - Collect mismatch rates in real traces; if a type is consistently ignored, remove or
   redefine it rather than adding more.

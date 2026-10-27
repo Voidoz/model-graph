@@ -1039,6 +1039,10 @@
     if (runLink) {
       runLink.setAttribute("href", "run.html?graph=" + encodeURIComponent(id));
     }
+    const editLink = document.getElementById("graph-edit-link");
+    if (editLink) {
+      editLink.setAttribute("href", "editor.html?id=" + encodeURIComponent(id));
+    }
 
     if (meta) {
       clear(meta);

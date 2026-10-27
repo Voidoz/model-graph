@@ -83,11 +83,11 @@ Requirements:
 
 ## Follow-ups
 
-- [T-0008](../../.scratch/tickets/T-0008-router-executor.md) implements the decision parser,
+- T-0008 implements the decision parser,
   repair, threshold, and fallback policy.
-- [T-0020](../../.scratch/tickets/T-0020-node-eval.md) implements calibration and routing
+- T-0020 implements calibration and routing
   metrics.
-- [T-0024](../../.scratch/tickets/T-0024-router-training.md) trains routers to produce this
+- T-0024 trains routers to produce this
   contract.
 - Revisit `allow_direct_answer` only if evaluation shows a real category of requests that no
   child should handle.

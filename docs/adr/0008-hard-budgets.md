@@ -87,10 +87,10 @@ Rules:
 
 ## Follow-ups
 
-- [T-0010](../../.scratch/tickets/T-0010-run-engine.md) implements the budget accountant and
+- T-0010 implements the budget accountant and
   veto.
-- [T-0014](../../.scratch/tickets/T-0014-accounting.md) implements cost/token/latency
+- T-0014 implements cost/token/latency
   accounting.
-- [T-0015](../../.scratch/tickets/T-0015-pruning-lazy-loading.md) adds resource-aware
+- T-0015 adds resource-aware
   profiles.
 - Revisit defaults after real traces; publish the rationale for any change.

@@ -93,14 +93,14 @@ explicit, impact is analyzed before building, and promotion is atomic and revers
 
 ## Follow-ups
 
-- [T-0038](../../.scratch/tickets/T-0038-change-sets-swaps.md): change sets, impact analysis,
+- T-0038: change sets, impact analysis,
   atomic promotion, rollback (Phase 4).
-- [T-0039](../../.scratch/tickets/T-0039-canary-hot-swap.md): canary/shadow, in-flight pinning,
+- T-0039: canary/shadow, in-flight pinning,
   hot swap and drain for resident/fused targets (Phase 5).
-- [T-0040](../../.scratch/tickets/T-0040-iteration-ux.md): watch mode, candidate comparison,
+- T-0040: watch mode, candidate comparison,
   impact panel, stale badges (Phase 4/5).
-- [T-0034](../../.scratch/tickets/T-0034-aot-plan-compiler.md) supplies plan hashes and
-  invalidation. [T-0037](../../.scratch/tickets/T-0037-graph-distillation.md) supplies the
+- T-0034 supplies plan hashes and
+  invalidation. T-0037 supplies the
   distilled-student staleness policy.
 - Resolve `Q-016` (hybrid distilled fallback) and `Q-018` (revision retention/GC) before a
   production deployment workflow.

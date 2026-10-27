@@ -1,0 +1,163 @@
+.editor-page .editor-status {
+  margin: 0 0 0.8rem;
+  color: var(--muted, #5b6270);
+  font-size: 0.9rem;
+}
+
+.editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(18rem, 0.85fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.editor-pane {
+  min-width: 0;
+}
+
+.editor-label {
+  display: block;
+  margin: 0.5rem 0 0.35rem;
+  color: var(--muted, #5b6270);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.graph-yaml {
+  display: block;
+  width: 100%;
+  min-height: 38rem;
+  resize: vertical;
+  padding: 0.9rem;
+  border: 1px solid var(--line, #d8dce3);
+  border-radius: 8px;
+  background: var(--code-bg, #f6f7f9);
+  color: var(--ink, #1d2330);
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.graph-yaml:focus-visible,
+.editor-run input:focus-visible {
+  outline: 2px solid var(--accent, #2d5bd1);
+  outline-offset: 2px;
+}
+
+.editor-help {
+  margin: 0.45rem 0 0.8rem;
+  color: var(--muted, #5b6270);
+  font-size: 0.85rem;
+}
+
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.editor-run {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line, #d8dce3);
+}
+
+.editor-run label {
+  flex-basis: 100%;
+  color: var(--muted, #5b6270);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.editor-run input {
+  flex: 1 1 18rem;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line, #d8dce3);
+  border-radius: 7px;
+  background: var(--panel, #fff);
+  color: var(--ink, #1d2330);
+  font: inherit;
+}
+
+.editor-side {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.editor-side .card {
+  min-width: 0;
+}
+
+.editor-list {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.editor-list li {
+  margin: 0.35rem 0;
+  overflow-wrap: anywhere;
+}
+
+.editor-model {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--code-bg, #f6f7f9);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+}
+
+.editor-ok {
+  color: var(--good-ink, #166534);
+  font-weight: 700;
+}
+
+.editor-bad {
+  color: var(--bad-ink, #991b1b);
+  font-weight: 700;
+}
+
+.editor-artifact {
+  max-height: 18rem;
+  margin: 0.5rem 0 0;
+  padding: 0.6rem;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--code-bg, #f6f7f9);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .graph-yaml {
+    min-height: 28rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor-page *,
+  .editor-page *::before,
+  .editor-page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

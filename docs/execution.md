@@ -353,7 +353,7 @@ immutable deployment revision that served the request:
   "prune_hash": "sha256:...",
   "budget": {"max_steps": 8, "max_depth": 3, "max_total_tokens": 32000, "max_cost_usd": 0.05},
   "seed": 42,
-  "environment": {"python_version": "3.12.6", "platform": "Linux-...", "providers": [{"name": "ollama", "version": "0.6.0"}], "hostname": "workstation", "pid": 4242},
+  "environment": {"python_version": "3.12.6", "platform": "Linux-...", "providers": [{"name": "ollama", "version": "1.0.0"}], "hostname": "workstation", "pid": 4242},
   "started_at": "2026-10-22T10:00:00Z",
   "finished_at": "2026-10-22T10:00:07Z",
   "usage": {"steps": 3, "input_tokens": 2011, "output_tokens": 842, "total_tokens": 2853, "cost_usd": 0.0},
@@ -695,7 +695,7 @@ Rules:
 - Logging is structured; human-readable logs are a rendering of events, not a second
   source of truth.
 - OpenTelemetry export is optional and off by default; the core runs without the dependency
-  ([T-0030](../.scratch/tickets/T-0030-observability.md)).
+  (T-0030).
 - Operational details — JSONL logs, trace-to-metric projection, `mg stats`, and the optional
   span exporter — are in [observability.md](observability.md).
 
@@ -727,6 +727,6 @@ training data. The runtime must never delete a trace to make a failure look clea
 | Streaming intermediate events | UX, not semantics | `Q-008` |
 | Multi-turn conversations | Envelope history and routing state need design | `Q-009` |
 | Distributed model placement | Keep v0 single-machine; adapters are already network-capable | Backlog B-09 |
-| GPU-resident execution backends | Post-v0 performance track; v0 uses the portable backend | [T-0031](../.scratch/tickets/T-0031-resident-backend.md) |
+| GPU-resident execution backends | Post-v0 performance track; v0 uses the portable backend | T-0031 |
 | Recursive subgraphs | Loop guards and termination proofs are unsolved | `Q-007` |
 | Speculative execution of branches | Cost model and cache semantics need work | Backlog B-02 |

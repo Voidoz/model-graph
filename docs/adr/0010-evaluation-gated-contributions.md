@@ -83,9 +83,9 @@ owner and version.**
 
 ## Follow-ups
 
-- [T-0020](../../.scratch/tickets/T-0020-node-eval.md), [T-0021](../../.scratch/tickets/T-0021-e2e-eval.md),
-  and [T-0022](../../.scratch/tickets/T-0022-ci-gates.md) implement the levels and gates.
-- [T-0026](../../.scratch/tickets/T-0026-model-registry.md) enforces cards and reports at
+- T-0020, T-0021,
+  and T-0022 implement the levels and gates.
+- T-0026 enforces cards and reports at
   registry entry.
 - Publish a contribution guide with a worked example once Phase 2 is complete.
 - Revisit tolerances with measured variance, not intuition.

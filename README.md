@@ -1,278 +1,344 @@
 # Model Graph
 
-**Compose small, independently trainable language models into a routed graph.**
+**Compose small, independently trainable language models into a routed, observable graph.**
 
-Model Graph is a system for breaking an AI system into discrete nodes — deciders that
-route a request and specialists that handle it — connected only by natural language.
-Instead of scaling one monolithic model, you compose many small ones: a router decides
-which expert should see the request, the expert answers, and the graph returns the
-result. Experts can be trained by different people on ordinary hardware, versioned
-independently, and pruned when a deployment does not need them.
+Model Graph breaks an AI system into discrete nodes: routers that decide where a request should
+go, workers that answer, joiners that combine results, and subgraphs that compose teams. The edges
+carry natural language, not tensors. A graph can use local Ollama models, an OpenAI-compatible
+endpoint, or the deterministic mock provider.
 
-> **Status: v0.6.0 — hardened, observable, inspectable graph runtime.** The repository has a
-> runnable vertical slice — schema and semantic validation, router/worker/joiner/subgraph
-> execution, deterministic mock and local HTTP providers, hard budgets, traces, run manifests,
-> and offline replay — plus a loopback-only `mg ui` GUI for graph inspection, mock runs,
-> traces, artifacts, models, history, and replay. The measurement layer includes node, routing,
-> end-to-end, and safety gates; model changes go through impact analysis and immutable revisions
-> with atomic promotion and rollback. Trace-to-dataset export, a tested starter library, an
-> exact-match response cache, structured logs/metrics, and a security threat model are in place.
-> The static inspector, watch loop, target-aware diff, and comparison views make iteration
-> visible without a running model. Resident/compiled targets and canaries are the next tracks.
-> Live local-model validation passed on CPU and on an RTX 3080 via Ollama Vulkan, including a
-> composed run with 4GB pruning. Start with [docs/tutorial.md](docs/tutorial.md) for the guided
-> path, [docs/quickstart.md](docs/quickstart.md) for the command reference, and
-> [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) for what comes next.
+This is a local-first Python project for people who want to inspect, evaluate, and change a model
+workflow instead of treating it as one opaque endpoint.
 
-## The idea in one picture
+## Status
 
-```text
-                 ┌──────────────┐
-   request ─────▶│  triage      │  decider
-                 │  (router)    │
-                 └──┬────────┬──┘
-                    │        │
-          "coding"  │        │  "story"
-                    ▼        ▼
-             ┌──────────┐  ┌──────────┐
-             │ coding   │  │ story    │
-             │ decider  │  │ writer   │
-             └──┬────┬──┘  └────┬─────┘
-       "JS"      │    │ "general" │
-                 ▼    ▼           ▼
-            ┌──────┐ ┌────────┐ ┌────────┐
-            │  JS  │ │ coder  │ │ story  │
-            │ 3B   │ │ 7B     │ │ 7B     │
-            └──────┘ └────────┘ └────────┘
-                    \     |     /
-                     \    |    /
-                    answer artifacts
+**v1.0.0 — usable local release.** The portable runtime, evaluation, revisions, dataset export,
+registry, training recipes, security controls, observability, static inspector, and local GUI are
+implemented and tested. Live local execution has been validated with Ollama on CPU and on an
+RTX 3080 via Vulkan, including a composed graph with 4GB pruning.
+
+Not in this release: resident/fused/compiled GPU backends, distilled deployment students, canary
+or hot-swap serving, and a full visual graph builder. The repository documents those boundaries
+rather than faking them. Real LoRA training and real-hardware 8GB/24GB claims remain unverified
+in this environment; the specialist kit explicitly marks synthetic artifacts as non-promotable.
+
+## Why
+
+Scaling one model is not the only way to improve a system. A router can send a narrow request to a
+narrow model, a specialist can be trained by the person who owns its data, and a deployment can
+drop branches it cannot run. The trade-offs are real:
+
+- routing and handoff can lose quality;
+- a graph can cost more than a single model;
+- a specialist can regress off-distribution;
+- local hardware, licenses, and privacy still matter.
+
+The project treats those as measurable properties, not marketing claims. Every run produces a
+trace and a manifest; graph changes can produce evaluation evidence; deployments are immutable
+revisions.
+
+## Features
+
+- **Graph contract:** YAML/JSON, JSON Schema validation, canonical IR hashing, topology,
+  prompt, binding, policy, and deployment-target diffs.
+- **Runtime:** router, worker, joiner, and subgraph execution; bounded fan-out/ensemble joins;
+  hard step/token/cost/wall budgets; deterministic traces; replay.
+- **Providers:** deterministic mock, Ollama, OpenAI-compatible HTTP, and a local trained-router
+  provider.
+- **Profiles:** 4GB, 8GB, and no-network starter profiles; capability pruning with a recorded
+  `PruneReport`.
+- **Evaluation:** node, routing, e2e, and safety suites; oracle/confusion/calibration metrics;
+  bootstrap confidence intervals; committed baselines; contribution gates.
+- **Revisions:** change sets, impact analysis, immutable deployment revisions, atomic promotion,
+  rollback, and retention policy.
+- **Training:** trace-to-dataset export with consent/redaction/dedupe; trained-router recipe with
+  calibration; a synthetic specialist/LoRA/distillation kit; a versioned local model registry.
+- **Inspection:** self-contained offline HTML inspector with paths, pruned branches, artifacts,
+  impact/stale/revision panels, and side-by-side run comparison.
+- **Operations:** exact-match response cache, structured JSONL/console logs, trace-derived metrics,
+  `mg stats`, optional OpenTelemetry spans, and a dependency audit.
+- **GUI:** loopback-only zero-build web app for graph inspection, mock/live runs, traces,
+  artifacts, model pull, YAML graph editing, candidate validation, and run history.
+
+## Requirements
+
+- Python **3.12+**
+- [`uv`](https://docs.astral.sh/uv/)
+- Optional live models: [Ollama](https://ollama.com/) and any starter tags you want
+- Optional GUI: a modern browser; no Node build step
+
+## Install
+
+```bash
+git clone https://github.com/Voidoz/model-graph.git
+cd model-graph
+uv sync
+uv run mg version
+make check
 ```
 
-The edges carry language, not tensors. Each model sees a rendered prompt it can
-understand and returns a result or a routing decision. The graph is the composition;
-the language is the bus.
+`make check` runs formatting, lint, mypy, and the offline test suite. It does not need a model,
+network, API key, or GPU.
 
-## Quickstart (MVP)
+## Quickstart
 
-The first runnable slice is in place. It validates graphs, runs them with a deterministic
-mock provider or a local Ollama endpoint, records a trace and run manifest, and replays a
-recorded run offline. The guided version of this section, including pruning and a node
-evaluation, is [docs/tutorial.md](docs/tutorial.md).
+Validate and run the smallest graph with the deterministic mock provider:
 
-```text
-uv sync
+```bash
 uv run mg validate graphs/hello-triage.graph.yaml
-uv run mg run graphs/hello-triage.graph.yaml --provider mock
+uv run mg run graphs/hello-triage.graph.yaml --provider mock \
+  --task "Write a debounce function in TypeScript."
+```
+
+Inspect the artifacts, trace, and manifest, then replay the run:
+
+```bash
 uv run mg runs list
 uv run mg replay runs/<run-id>
 uv run mg trace show runs/<run-id>
 ```
 
-To use a local model instead of the mock provider, pull the model in Ollama and run with the
-default provider:
+Try the starter library:
 
-```text
-ollama pull qwen2.5:1.5b-instruct
-ollama pull qwen2.5-coder:7b
-uv run mg run graphs/hello-triage.graph.yaml --registry registry/models
-```
-
-The starter library also includes a nested coding team and a writing/research graph:
-
-```text
+```bash
 uv run mg run graphs/coding-specialist.graph.yaml --provider mock
 uv run mg run graphs/composed-assistant.graph.yaml --provider mock
 uv run mg run graphs/writing-studio.graph.yaml --provider mock
 ```
 
-See [docs/quickstart.md](docs/quickstart.md) for the full command reference and
-[docs/tutorial.md](docs/tutorial.md) for the tested first-run path.
+The guided path, including a live Ollama run, pruning, and a node evaluation, is
+[`docs/tutorial.md`](docs/tutorial.md). The command reference is
+[`docs/quickstart.md`](docs/quickstart.md).
+
+## Local models
+
+The starter manifests map graph model ids to Ollama tags:
+
+| Manifest | Ollama tag | Declared need |
+| --- | --- | --- |
+| `router-small` | `qwen2.5:1.5b-instruct` | 2GB VRAM |
+| `js-specialist-3b` | `qwen2.5-coder:3b` | 4GB VRAM |
+| `coder-7b` | `qwen2.5-coder:7b` | 6GB VRAM |
+| `story-7b` | `mistral:7b-instruct` | 6GB VRAM |
+| `writer-7b` | `qwen2.5:7b-instruct` | 6GB VRAM |
+
+Pull a tag with Ollama:
+
+```bash
+ollama pull qwen2.5:1.5b-instruct
+ollama pull qwen2.5-coder:7b
+uv run mg run graphs/hello-triage.graph.yaml --registry registry/models
+```
+
+You can also pull models from the local GUI: open **Models & runs**, enter a tag, and press
+**Pull model**. The server invokes `ollama pull` directly (no shell), shows the job log, and
+refreshes the installed-tag list when it completes. Pulls are explicit local actions; nothing is
+uploaded by the GUI.
+
+Pruning is how a smaller machine stays inside its budget:
+
+```bash
+uv run mg run graphs/composed-assistant.graph.yaml \
+  --profile profiles/local-4gb.yaml --registry registry/models
+```
+
+The 4GB profile removes the 6GB story/generic-coder branches and records the removals. A pruned
+fallback is reported; router abstention then fails safely.
 
 ## Local GUI
 
-`mg ui` serves a zero-build, loopback-only web app from Python's standard library. It inspects
-compiled graphs, runs the deterministic mock provider, shows traces/artifacts/usage, browses
-models and run history, and replays recorded runs. No CDN, telemetry, auth, or Node build step.
-
-```text
+```bash
 uv run mg ui
 # Model Graph UI: http://127.0.0.1:8765/
 ```
 
+The GUI is served by Python's standard library. It binds to loopback only, has no CDN or telemetry,
+and has no authentication; do not expose it to a network.
+
+Pages:
+
+- **Dashboard** — compiled graphs, node/edge counts, warnings.
+- **Graph** — SVG topology, node details, run link, edit link.
+- **Run console** — mock/live run, routing timeline, artifacts, usage, trace, replay.
+- **Models & runs** — registry catalog, installed Ollama tags, model pull, run history.
+- **Graph editor** — edit YAML, validate through the real compiler, preview compiled nodes/edges,
+  save a candidate under `runs/gui-candidates/`, and smoke-test it with the mock provider.
+
+Saving a candidate does **not** change the authored graph, the live deployment, or a revision.
+Candidates must go through the normal evaluation and revision workflow before promotion.
+
 Use `--port 0` for a free port, `--no-browser` to suppress the browser, and `--runs-dir PATH` to
-point history at another directory. The run console's `mock` provider works offline; `auto`
-uses each node's configured local provider. See [docs/gui.md](docs/gui.md) for the API,
-page requirements, and security model.
+point history at another directory. See [`docs/gui.md`](docs/gui.md) for the API, page contract,
+and security model.
 
-## Evaluation and profiles
+## Evaluation
 
-The measurement layer is runnable offline:
-
-```text
+```bash
 uv run mg eval node --suite evals/mock/js-specialist \
   --graph graphs/coding-specialist.graph.yaml --provider mock
 uv run mg eval routing --suite evals/mock/triage --provider mock
 uv run mg eval e2e --suite evals/e2e/composed-assistant \
   --graph graphs/composed-assistant.graph.yaml --provider mock --profile local-8gb
+uv run mg eval compare --baseline evals/baselines/e2e.json \
+  --candidate runs/evals/ci/e2e.json
 make eval-gates
 ```
 
-`mg eval compare` enforces the contribution gates against committed baselines. Run profiles
-prune branches the machine cannot serve; `mg run --profile profiles/local-4gb.yaml` removes
-the 6GB story/coder branches and reports the removals.
+`mg eval compare` reports quality, validity, cost, latency, slices, confidence intervals, and an
+optional candidate/baseline/oracle reference when the reports carry e2e baselines. A failed gate
+is a release blocker; a waiver is visible and requires a reason. `make eval-gates` runs the four
+offline gates used by CI.
 
-## Revisions and training data
+## Revisions and iteration
 
-A model swap is a candidate revision, not a live mutation. Inspect its impact before loading a
-model, require the change-class evidence, then promote atomically or roll back:
+A model swap is a candidate revision, not a live mutation:
 
-```text
+```bash
 uv run mg status --revisions
 uv run mg swap node js-specialist --to js-specialist-3b --dry-run
 uv run mg change explain <change-id>
 uv run mg promote --revision <revision> --dry-run
+uv run mg rollback --to <previous-revision>
 ```
 
-Accepted traces can become a consented, redacted, deduplicated dataset with frozen grouped
-splits:
+Iteration without loading a model:
 
-```text
+```bash
+uv run mg watch graphs/hello-triage.graph.yaml --once
+uv run mg graph diff graphs/hello-triage.graph.yaml /tmp/candidate.graph.yaml
+uv run mg inspect --html runs/<run-id> --graph graphs/hello-triage.graph.yaml \
+  --out /tmp/run.html
+```
+
+`mg inspect --change` adds the impact/stale/revision timeline; `--compare RUN_B` adds a
+side-by-side run view. The inspector is read-only and offline. See
+[`docs/iteration.md`](docs/iteration.md) and [`docs/inspector.md`](docs/inspector.md).
+
+## Training and registry
+
+Export accepted traces into a consented, redacted dataset:
+
+```bash
 uv run mg data export --run runs/<run-id> --out /tmp/dataset \
   --consent "operator approved local training"
 ```
 
-See [docs/iteration.md](docs/iteration.md) and [docs/training.md](docs/training.md).
+Train a calibrated router on a dataset:
 
-## Inspecting and iterating
-
-```text
-uv run mg watch graphs/hello-triage.graph.yaml --once
-uv run mg inspect --html runs/<run-id> --graph graphs/hello-triage.graph.yaml --out /tmp/run.html
-uv run mg graph diff graphs/hello-triage.graph.yaml /tmp/candidate.yaml
-uv run mg eval compare --baseline evals/baselines/e2e.json --candidate runs/evals/ci/e2e.json
-uv run mg inspect --html runs/<run-id> --graph graphs/hello-triage.graph.yaml \
-  --out /tmp/impact.html --change <change-id>
+```bash
+uv run mg train dataset --dataset /tmp/dataset --out runs/training/router-dataset
+uv run mg train router --config training/configs/router-triage.yaml
 ```
 
-`mg watch` validates and mock-runs on save without loading a model. `mg inspect` produces one
-self-contained, offline HTML file with the graph, chosen path, pruned branches, artifacts, and
-totals; `--change` adds impact/stale/revision panels and `--compare RUN_B` adds a side-by-side
-run view. All action links are commands: the inspector never mutates a revision, change set, or
-run. See [docs/inspector.md](docs/inspector.md).
+Build the synthetic specialist/LoRA/distillation rehearsal and its manifest, card, and eval
+report:
 
-## Operations and safety
+```bash
+uv run mg train specialist --config training/configs/specialist-synthetic.yaml --eval
+```
 
-Repeated provider calls hit a local exact-match cache by default; `--no-cache` bypasses it and
-`--cache-mode readonly` serves existing entries without writing. Cache hits consume zero tokens
-and report avoided usage separately.
+The 8GB/24GB recipe configs are under `training/configs/`. The real LoRA path requires PyTorch,
+PEFT, and a supported GPU; this environment does not have that stack, so real-hardware runs are
+explicitly unverified and synthetic artifacts are never promotable.
 
-```text
+The local registry stores versioned manifests, model cards, and evidence:
+
+```bash
+uv run mg registry add /path/to/contribution
+uv run mg registry list
+uv run mg registry inspect js-specialist-3b@0.3.0
+uv run mg registry verify
+```
+
+Registry operations work offline. Weights are referenced by URI/hash, never downloaded. A license
+field is a declaration, not legal advice.
+
+## Operations
+
+```bash
 uv run mg stats --last 5
 MG_LOG_FORMAT=json MG_LOG_FILE=runs/run.jsonl uv run mg run graphs/hello-triage.graph.yaml
 make audit
 ```
 
-Structured logs and optional OpenTelemetry spans carry identifiers and timings, not prompts or
-artifacts. The renderer labels untrusted content, neutralizes protocol markers, and caps oversized
-inputs; persisted traces, envelopes, and errors are redacted. `make audit` is network-dependent
-and separate from the offline gate. See [docs/security.md](docs/security.md) and
-[docs/observability.md](docs/observability.md) for the threat model, limitations, and export
-controls. Redaction can break replay and does not rewrite artifact blobs; do not treat delimiters
-as injection immunity.
+The exact-match response cache is on by default for `mg run`; `--no-cache` bypasses it and
+`--cache-mode readonly` serves existing entries without writing. Cache hits consume zero tokens
+and report avoided usage. Structured logs and optional OpenTelemetry spans carry identifiers and
+timings, not prompts or artifacts.
 
-## Design principles
+`make audit` is a separate network-dependent dependency audit. It is not part of the offline
+`make check` path.
 
-1. **Language is the wire.** Any model that can chat can join the graph. No shared
-   embeddings, no weight surgery, no vendor lock-in (see [ADR-0001](docs/adr/0001-language-as-the-wire.md)).
-2. **Nodes are independently ownable.** A node has a model manifest, an eval suite,
-   and a version. You can improve one node without retraining the system
-   (see [ADR-0010](docs/adr/0010-evaluation-gated-contributions.md)).
-3. **The graph is declared, the route is runtime.** YAML declares the topology and is
-   statically validated; the router chooses a branch per request
-   (see [ADR-0005](docs/adr/0005-compile-time-graph-runtime-routing.md)).
-4. **Local-first, provider-neutral.** Weights stay where their owners put them.
-   A manifest points at an endpoint; adapters do the rest
-   (see [ADR-0009](docs/adr/0009-local-first-provider-neutral.md)).
-5. **Budgets are part of the type system.** Every run has hard limits on steps, depth,
-   tokens, money, and wall time. Graphs must be safe to run by default
-   (see [ADR-0008](docs/adr/0008-hard-budgets.md)).
-6. **No proof, no merge.** A node, model, or prompt change ships with a reproducible
-   evaluation report. Quality, cost, and latency are reported together.
-7. **Portable by default, compiled for speed.** The same graph can be interpreted, GPU-resident,
-   fused, or distilled without semantic drift. Performance claims require a quality-matched
-   benchmark (see [ADR-0011](docs/adr/0011-gpu-resident-backends.md) and
-   [ADR-0012](docs/adr/0012-compiled-deployment-targets.md)).
+## Architecture
 
-## What this repository contains
+```text
+graph YAML -> schema + semantic validation -> compiled IR
+           -> scoped envelopes and rendered prompts
+           -> router / worker / joiner / subgraph execution
+           -> providers (mock, Ollama, OpenAI-compatible)
+           -> artifacts + trace + run manifest + replay
+```
 
-| Path | Purpose |
-| --- | --- |
-| [`docs/tutorial.md`](docs/tutorial.md) | Guided install → validate → mock/live run → trace → prune → node eval |
-| [`docs/quickstart.md`](docs/quickstart.md) | Install, validate, run, inspect, and replay the MVP |
-| [`docs/vision.md`](docs/vision.md) | Problem, thesis, hypotheses, kill criteria, what this is not |
-| [`docs/architecture.md`](docs/architecture.md) | System architecture, components, request lifecycle, deployment |
-| [`docs/graph-model.md`](docs/graph-model.md) | Node kinds, edges, artifact types, YAML anatomy, validation rules |
-| [`docs/protocol.md`](docs/protocol.md) | Envelope, renderers, router decisions, error model |
-| [`docs/execution.md`](docs/execution.md) | Scheduler, budgets, pruning, caching, replay, observability |
-| [`docs/security.md`](docs/security.md) | Threat model, untrusted input, redaction, trust policy, release checklist |
-| [`docs/observability.md`](docs/observability.md) | Structured logs, trace-derived metrics, `mg stats`, optional spans |
-| [`docs/inspector.md`](docs/inspector.md) | Static graph/trace inspector, impact/compare panels, future UI boundary |
-| [`docs/gpu-execution.md`](docs/gpu-execution.md) | GPU-resident and fused same-base backends, overhead accounting, limits |
-| [`docs/performance.md`](docs/performance.md) | LLM-parity analysis, options compared, overhead budget, compilation targets |
-| [`docs/iteration.md`](docs/iteration.md) | Iteration loops, swap impact, atomic revisions, canary/rollback |
-| [`docs/gui.md`](docs/gui.md) | Local GUI architecture, JSON API, page contract, security |
-| [`docs/profiles.md`](docs/profiles.md) | Run profiles, capability pruning, and lazy loading |
-| [`docs/training.md`](docs/training.md) | Independent specialist and router training, data flywheel |
-| [`docs/evaluation.md`](docs/evaluation.md) | Metrics, suites, baselines, contribution gates |
-| [`docs/roadmap.md`](docs/roadmap.md) | Phases, milestones, sequencing, risk register summary |
-| [`docs/glossary.md`](docs/glossary.md) | Shared vocabulary |
-| [`docs/development.md`](docs/development.md) | Toolchain, checks, and repository layout |
-| [`docs/adr/`](docs/adr/) | Accepted architectural decisions and their trade-offs |
-| [`schemas/`](schemas/) | Machine-checkable contracts: graph, model manifest, envelope, ticket, eval suite, run manifest, dataset, change set |
-| [`graphs/`](graphs/) | Tested starter library: hello-triage, coding-specialist, composed-assistant, writing-studio |
-| [`profiles/`](profiles/) | Starter run profiles: 4GB, 8GB, and an air-gapped audit profile |
-| [`registry/models/`](registry/models/) | Model manifests for the starter/library tutorial models |
-| [`examples/`](examples/) | Design fixtures and the envelope example used by eval suites |
-| [`.scratch/`](.scratch/) | Working ideas, open questions, ticket backlog, journal, handoff |
+The contracts are in `schemas/`; the runtime and compiler are under `src/modelgraph/`; the starter
+graphs, profiles, model manifests, examples, evaluations, and training recipes are top-level
+directories. See [`docs/architecture.md`](docs/architecture.md).
 
-## Read in this order
+## Security and limits
 
-0. [`docs/tutorial.md`](docs/tutorial.md) — run the starter library before reading the design.
-1. This README and [`docs/vision.md`](docs/vision.md) — why the project exists.
-2. [`docs/architecture.md`](docs/architecture.md) — how the pieces fit.
-3. [`docs/graph-model.md`](docs/graph-model.md) and [`graphs/`](graphs/) — what you author.
-4. [`docs/protocol.md`](docs/protocol.md) and [`docs/execution.md`](docs/execution.md) — what runs.
-5. [`docs/gpu-execution.md`](docs/gpu-execution.md) — how a graph can run GPU-resident, and what that cannot fix.
-6. [`docs/performance.md`](docs/performance.md) — how the graph compares to an LLM, what to compile, and what parity requires.
-7. [`docs/iteration.md`](docs/iteration.md) — how a user swaps models safely while building a workflow.
-8. [`docs/security.md`](docs/security.md) and [`docs/observability.md`](docs/observability.md) — what is untrusted, what is persisted, and what is exported.
-9. [`docs/training.md`](docs/training.md) and [`docs/evaluation.md`](docs/evaluation.md) — how nodes improve.
-10. [`docs/roadmap.md`](docs/roadmap.md) and [`.scratch/tickets/BOARD.md`](.scratch/tickets/BOARD.md) — what to build next.
+- The GUI is local-only and unauthenticated; keep it on loopback.
+- Untrusted content is delimited, protocol markers are neutralized, and persisted traces,
+  envelopes, manifests, and errors are redacted. Delimiters are not injection immunity.
+- Artifact blobs and evaluation reports are not rewritten by runtime redaction.
+- There is no sandbox for tools/code execution in this release and no signing for manifests or
+  weights.
+- Redaction can break replay. Cache entries are local, unencrypted sensitive data.
+- Resident/fused/compiled/canary deployment is not implemented. Do not read the performance
+  design docs as measured release claims.
 
-## Working in the repository
+See [`docs/security.md`](docs/security.md) and [`SECURITY.md`](SECURITY.md).
 
-- **Humans:** start with the ticket board, pick a `ready` ticket, and follow the
-  definition of done in the ticket.
-- **AI agents and external workflows:** read [`AGENTS.md`](AGENTS.md) and
-  [`.scratch/AGENT-PROTOCOL.md`](.scratch/AGENT-PROTOCOL.md). The `.scratch` folder is
-  the shared interface: stable ticket format, explicit status transitions, append-only
-  journal, and a current handoff note.
-- **Contracts:** `schemas/*.schema.json` are the canonical shapes. Change a contract by
-  changing the schema and the docs together, with an ADR if the decision is significant.
+## Development
 
-## Assumptions and open decisions
+```bash
+make format
+make lint
+make type
+make test
+make check
+make eval-gates
+make ui-check
+```
 
-These are explicit so they can be challenged, not buried:
+`make check` is offline and deterministic. A live model test is opt-in. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and [`docs/development.md`](docs/development.md).
 
-- The working name is **Model Graph**; the CLI prefix is `mg`. Naming is open (`Q-002`).
-- The implementation language is **Python 3.12+**; the contracts are language-neutral
-  ([ADR-0002](docs/adr/0002-python-core-neutral-contracts.md)).
-- The license is **undecided** (`Q-001`). Do not assume reuse rights yet.
-- v0 is **text-in, text-out** (language, code, JSON) and **local-first**.
-- Composition can *lose* quality as well as gain it. Routing and handoff fidelity are
-  the central risks; the design treats them as measurable (`docs/evaluation.md`).
+## Documentation
+
+- [`docs/tutorial.md`](docs/tutorial.md) — guided install → run → prune → evaluate
+- [`docs/quickstart.md`](docs/quickstart.md) — command reference
+- [`docs/architecture.md`](docs/architecture.md) — components and request lifecycle
+- [`docs/graph-model.md`](docs/graph-model.md) — YAML, node kinds, validation
+- [`docs/protocol.md`](docs/protocol.md) — envelope, renderer, routing contract
+- [`docs/execution.md`](docs/execution.md) — scheduler, budgets, caching, replay
+- [`docs/evaluation.md`](docs/evaluation.md) — suites, metrics, gates
+- [`docs/iteration.md`](docs/iteration.md) — change sets, revisions, rollback
+- [`docs/training.md`](docs/training.md) — datasets, routers, specialists
+- [`docs/gui.md`](docs/gui.md) — local GUI/API
+- [`docs/security.md`](docs/security.md) — threat model and release checklist
+- [`docs/observability.md`](docs/observability.md) — logs, metrics, spans
+- [`docs/adr/`](docs/adr/) — accepted decisions and trade-offs
+- [`docs/glossary.md`](docs/glossary.md) — vocabulary
+
+## Contributing
+
+Contributions are welcome under the project license. Read [`CONTRIBUTING.md`](CONTRIBUTING.md),
+the [Code of Conduct](CODE_OF_CONDUCT.md), and the evaluation-evidence requirements. Security
+reports should follow [`SECURITY.md`](SECURITY.md), not a public issue.
 
 ## License
 
-TBD — see [`.scratch/ideas/open-questions.md`](.scratch/ideas/open-questions.md#q-001--license-and-contribution-terms).
+Model Graph is licensed under the **GNU General Public License, version 3 or later**
+(`GPL-3.0-or-later`). See [`LICENSE`](LICENSE).
+
+Third-party models, adapters, datasets, and model cards retain their own licenses. The project
+does not redistribute model weights; check upstream terms before use or redistribution.

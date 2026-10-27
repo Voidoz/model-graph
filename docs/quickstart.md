@@ -113,8 +113,7 @@ If Ollama is not running, the run fails with a typed `MG-3001` connection error 
 a trace/manifest for inspection.
 
 The hello/composed/coding-specialist examples have been verified live on CPU and on an
-RTX 3080 through Ollama Vulkan. See `.scratch/runs/2026-10-22-live-ollama.md` and
-`.scratch/runs/2026-10-22-live-gpu.md`; timings are hardware-specific.
+RTX 3080 through Ollama Vulkan. Timings are hardware-specific.
 
 If `ollama ps` reports `CPU` after installing a GPU backend, restart the service and verify the
 backend:

@@ -10,7 +10,7 @@ metadata:
     difficulty: intermediate
   authors:
     - Model Graph contributors
-  license: TBD
+  license: GPL-3.0-or-later
 spec:
   entry: coding-triage
   inputs:

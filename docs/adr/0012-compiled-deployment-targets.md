@@ -108,14 +108,14 @@ workload. One valid target is a distilled single model.**
 
 ## Follow-ups
 
-- [T-0034](../../.scratch/tickets/T-0034-aot-plan-compiler.md): AOT plan, prompt/tokenization,
+- T-0034: AOT plan, prompt/tokenization,
   prefix KV, memory plan.
-- [T-0035](../../.scratch/tickets/T-0035-fast-routing.md): classifier/head routing, flattening,
+- T-0035: classifier/head routing, flattening,
   route cache.
-- [T-0036](../../.scratch/tickets/T-0036-batched-scheduler.md): multi-request scheduler and
+- T-0036: multi-request scheduler and
   continuous batching.
-- [T-0037](../../.scratch/tickets/T-0037-graph-distillation.md): B4 student training and
+- T-0037: B4 student training and
   promotion.
-- [T-0033](../../.scratch/tickets/T-0033-transition-benchmark.md): LLM-parity benchmark and
+- T-0033: LLM-parity benchmark and
   gates (expand to dense/MoE/cascade baselines).
 - Revisit `Q-016` (distillation acceptance/hybrid fallback) before B4 promotion.

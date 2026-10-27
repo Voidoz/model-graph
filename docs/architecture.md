@@ -1,8 +1,8 @@
 # Architecture
 
 This document describes the system as a set of layers with explicit contracts. It is
-normative unless a linked ADR says otherwise. Implementation status lives in
-[`../.scratch/tickets/BOARD.md`](../.scratch/tickets/BOARD.md), not here.
+normative unless a linked ADR says otherwise. Implementation status is in the README and the
+release notes, not here.
 
 ## Contents
 
@@ -117,7 +117,7 @@ can be reproduced from the IR plus pinned manifests.
 
 - **Scheduler** walks single-selection graphs one node at a time, and executes
   `top_k`/`all` fan-out graphs as a node dependency DAG on a bounded thread pool
-  ([T-0018](../.scratch/tickets/T-0018-fanout-ensemble.md), [ADR-0014](adr/0014-fanout-selection-and-joins.md)).
+  (T-0018, [ADR-0014](adr/0014-fanout-selection-and-joins.md)).
 - **Envelope** is the request-scoped state: inputs, artifacts, budget, path, and
   provenance. It is *not* the full prompt; each node gets a scoped render of it.
 - **Executors** are separate for router, worker, joiner, and subgraph because their
@@ -177,7 +177,7 @@ provenance. The v0 layout adds versioned contributions
 (`registry/models/<id>/<version>/manifest.yaml`, card, eval report) and a deterministic
 content-hashed index; the legacy flat `registry/models/*.yaml` layout still resolves. A
 remote registry remains future work
-([T-0026](../.scratch/tickets/T-0026-model-registry.md)); see
+(T-0026); see
 [`registry/README.md`](../registry/README.md).
 
 ### 2.6 Evaluation and training
@@ -206,7 +206,7 @@ contributors work against.
 | **Envelope** | [`schemas/envelope.schema.json`](../schemas/envelope.schema.json) | Runtime | Mutable during a run; serialized at boundaries |
 | **Ticket** | [`schemas/ticket.schema.json`](../schemas/ticket.schema.json) | Workflow | Mutable frontmatter; append-only body notes |
 
-A **run manifest** (not yet a schema; see [T-0019](../.scratch/tickets/T-0019-run-manifests.md))
+A **run manifest** (not yet a schema; see T-0019)
 is the immutable record of a specific execution: graph hash, model manifest hashes,
 provider versions, seeds, environment, budgets, and outcome. It is what makes a run
 reproducible and an eval report auditable.
@@ -349,10 +349,10 @@ Rules:
 | **Library** | Python API | Embedding in training/eval scripts and notebooks | v0 target |
 | **CLI** | `mg validate`, `mg run`, `mg eval`, `mg replay` | Local authoring, CI, scripts | v0 target |
 | **Local daemon** | HTTP/OpenAI-compatible facade | Apps talk to a graph as if it were a model | v0.2 target |
-| **Resident GPU runtime** | CLI/library with `--backend resident|fused` | Low-overhead local execution on one GPU | Phase 5 ([T-0031](../.scratch/tickets/T-0031-resident-backend.md)) |
-| **Compiled / distilled target** | CLI/library with `--target compiled|distilled` | AOT plan or single-model hot path at LLM-class speed | Phase 5 ([T-0034](../.scratch/tickets/T-0034-aot-plan-compiler.md), [T-0037](../.scratch/tickets/T-0037-graph-distillation.md)) |
-| **Revisioned deployment** | Active pointer + previous revision | Safe model/prompt swaps, canary, rollback | Phase 4/5 ([T-0038](../.scratch/tickets/T-0038-change-sets-swaps.md), [T-0039](../.scratch/tickets/T-0039-canary-hot-swap.md)) |
-| **Visual inspector** | Read-only web UI over traces and graphs | Debugging, teaching, review | Spike ([T-0028](../.scratch/tickets/T-0028-visual-inspector.md)) |
+| **Resident GPU runtime** | CLI/library with `--backend resident|fused` | Low-overhead local execution on one GPU | Phase 5 (T-0031) |
+| **Compiled / distilled target** | CLI/library with `--target compiled|distilled` | AOT plan or single-model hot path at LLM-class speed | Phase 5 (T-0034, T-0037) |
+| **Revisioned deployment** | Active pointer + previous revision | Safe model/prompt swaps, canary, rollback | Phase 4/5 (T-0038, T-0039) |
+| **Visual inspector** | Read-only web UI over traces and graphs | Debugging, teaching, review | Spike (T-0028) |
 | **Hosted** | Multi-tenant service, registry, marketplace | Out of scope for v0 | Not planned yet |
 
 The CLI and library are the reference implementations. Any other surface must not invent
@@ -369,7 +369,7 @@ semantics that the reference runtime lacks.
 | New node kind | No | Would require ADR | Node kinds are semantic, not plugins |
 | New artifact type | No (v0) | Would require schema + ADR | Type lattice must stay small |
 | New eval metric | Yes | Eval plugin returning structured score | Must be reproducible and costed |
-| New tool/IO node | Deferred | [Q-004](../.scratch/ideas/open-questions.md#q-004--tool-use-and-code-execution) | Security review required |
+| New tool/IO node | Deferred | Q-004 | Security review required |
 
 The restraint is intentional: a stable core with a small number of concepts is easier
 for independent contributors to target than a plugin free-for-all.
@@ -406,5 +406,4 @@ for independent contributors to target than a plugin free-for-all.
 | [0013](adr/0013-immutable-deployment-revisions.md) | Swaps are immutable deployment revisions with explicit invalidation. | Accepted |
 | [0014](adr/0014-fanout-selection-and-joins.md) | Multi-route selection, bounded fan-out, and fail-closed joins. | Accepted |
 
-Open questions that would change this architecture are tracked in
-[`../.scratch/ideas/open-questions.md`](../.scratch/ideas/open-questions.md).
+Open questions that would change this architecture should be raised in the issue tracker.

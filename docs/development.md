@@ -153,7 +153,7 @@ baseline/policy, invalid report, or a suite-hash mismatch). Reports are written 
 [`evals/README.md`](../evals/README.md) for the suite and report contracts, and
 [profiles.md](profiles.md) for run profiles and pruning.
 
-See the ticket board in `.scratch/tickets/BOARD.md` for what exists today.
+See the repository issues and the README status for what exists today.
 
 ## CI
 

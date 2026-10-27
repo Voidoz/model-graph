@@ -53,7 +53,7 @@ HTTP status codes: `200` success, `201` run created, `400` invalid request, `404
 ### `GET /api/health`
 
 ```json
-{"ok": true, "version": "0.6.0", "ui": "1"}
+{"ok": true, "version": "1.0.0", "ui": "1"}
 ```
 
 ### `GET /api/graphs`
@@ -110,6 +110,40 @@ Compiles the graphs in the default registry and returns summaries.
   ]
 }
 ```
+
+### Model pull
+
+`GET /api/models/installed` runs `ollama list` and returns the installed tags. It never requires
+the registry to contain a matching manifest.
+
+`POST /api/models/pull` accepts `{"name": "qwen2.5:1.5b-instruct"}` and returns `202` with a job:
+
+```json
+{"job_id": "pull_ab12cd34", "model": "qwen2.5:1.5b-instruct", "status": "running", "lines": []}
+```
+
+The server runs `ollama pull NAME` without a shell. Names are restricted to a plain Ollama tag
+(no whitespace, shell metacharacters, or leading dash), at most two pulls run at once, and the job
+output is bounded. Poll `GET /api/models/pull/{job_id}` until `status` is `succeeded` or `failed`.
+The server is loopback-only and the pull is an explicit user action.
+
+### Graph source and editor
+
+`GET /api/graphs/{id}/source` returns the authored YAML for an existing registered graph.
+`GET /api/graph-template` returns a small valid starter document.
+
+`POST /api/graphs/validate` accepts `{"yaml": "..."}` and returns:
+
+```json
+{"valid": true, "errors": [], "warnings": [], "graph": {"id": "hello-triage"}}
+```
+
+Diagnostics use `candidate.graph.yaml`, not a temporary host path. `POST /api/graphs/candidates`
+performs the same compile with strict model resolution and writes the document to
+`runs/gui-candidates/<graph-id>-<hash>.graph.yaml`; it never changes the authored file or the
+active revision. `POST /api/graphs/run-candidate` accepts the YAML, a task, and `provider`
+(`mock` or `auto`) and runs it through the normal persisted runtime. Candidate files are not
+registered graphs; promote them through the normal revision/evaluation flow.
 
 ### `GET /api/runs?limit=20`
 
@@ -211,6 +245,9 @@ src/modelgraph/web/static/
   models.html       model catalog + run history     (T-0044)
   models.js         model/run-list logic            (T-0044)
   models.css        model/history styles            (T-0044)
+  editor.html       YAML graph editor + preview     (T-0046)
+  editor.js         validate/save/run candidate     (T-0046)
+  editor.css        editor layout                   (T-0046)
 ```
 
 Shared UI contract (`common.js`):
@@ -251,8 +288,22 @@ Shared UI contract (`common.js`):
 ### Models + history (T-0044)
 
 - `models.html` lists `/api/models` as cards with provider/model/license and description.
+- The pull panel lists installed Ollama tags and can start a pull. It shows the job log and
+  disables duplicate submits; it refreshes installed tags when the job succeeds.
 - `GET /api/runs` history table with outcome, graph, tokens, cost, started time, and links.
 - Filters by graph/outcome are optional; empty/error states required.
+
+### Graph editor (T-0046)
+
+- `editor.html?id=<graph-id>` loads the authored YAML; `editor.html` starts from the template.
+- The page validates through the compiler, shows errors/warnings and a compiled node/edge
+  preview, saves a candidate under the runs directory, and runs the candidate with the
+  deterministic mock provider.
+- The editor is YAML-first: it cannot invent fields the schema rejects, and it never writes the
+  authored graph or promotes a revision. A saved candidate must go through the normal evaluation
+  and promotion workflow.
+- The editor does not execute graph content, does not accept filesystem paths, and renders all
+  API values with text nodes.
 
 ## Security and testing
 

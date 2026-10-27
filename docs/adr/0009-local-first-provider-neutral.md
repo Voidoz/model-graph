@@ -82,11 +82,11 @@ providers; weights never move through the graph runtime.**
 
 ## Follow-ups
 
-- [T-0002](../../.scratch/tickets/T-0002-contract-tests.md) locks the manifest schema.
-- [T-0012](../../.scratch/tickets/T-0012-remote-adapters.md) and
-  [T-0013](../../.scratch/tickets/T-0013-local-adapters.md) implement adapters.
-- [T-0015](../../.scratch/tickets/T-0015-pruning-lazy-loading.md) implements capability-based
+- T-0002 locks the manifest schema.
+- T-0012 and
+  T-0013 implement adapters.
+- T-0015 implements capability-based
   pruning.
-- [T-0026](../../.scratch/tickets/T-0026-model-registry.md) adds registry verification and
+- T-0026 adds registry verification and
   contribution cards.
 - Resolve contribution licensing before a public registry (`Q-001`, `Q-010`).

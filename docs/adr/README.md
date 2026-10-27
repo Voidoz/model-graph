@@ -27,9 +27,8 @@ considered**, **Follow-ups**.
 
 ## Proposed or open
 
-None yet. Decisions that would change the architecture are tracked as questions in
-[`../../.scratch/ideas/open-questions.md`](../../.scratch/ideas/open-questions.md) until
-they are ready to become ADRs.
+None yet. Decisions that would change the architecture should be raised in the issue tracker
+before they become ADRs.
 
 ## Writing a new ADR
 

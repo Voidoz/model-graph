@@ -8,7 +8,6 @@ with an ADR, the ADR wins; fix the glossary.
 | **Abstain** | A router decision to decline routing because no route is sufficiently likely to be correct. Policy decides whether this becomes an error, a fallback, or a retry. |
 | **Adapter** | The implementation that talks to one provider (OpenAI-compatible HTTP, Ollama, llama.cpp, mock). Adapters are graph-unaware. |
 | **Artifact** | Named language with a semantic type (`text`, `code`, `patch`, `plan`, `json`, `report`), a producer, and a content hash. The unit of handoff and evaluation. |
-| **Backlog** | Unscoped ideas in `.scratch/ideas/backlog.md` that have not become tickets. |
 | **Budget** | A hard limit on steps, depth, tokens, cost, or wall time for a run. |
 | **Capability filter** | A run-profile rule (no network, max VRAM, license allowlist) used to decide which nodes can run on a machine. |
 | **Capability card** | The compact description of a child shown to a router: target description, `when` clause, examples, artifact type, and cost/latency hints. |
@@ -74,7 +73,6 @@ with an ADR, the ADR wins; fix the glossary.
 | **Suite** | A versioned set of evaluation cases, a metric, and thresholds. |
 | **Time to first token (TTFT)** | Request start to the first output token; includes routing latency and is the metric most affected by an extra decider hop. |
 | **Trace** | The append-only event log of a run: node entries, renders, provider calls, decisions, artifacts, budgets, and outcome. |
-| **Ticket** | A unit of work in `.scratch/tickets/` with a stable ID, scope, acceptance criteria, and test plan. |
 | **Validity** | The fraction of outputs that satisfy the node's artifact contract, independent of quality. |
 | **Worker** | A leaf node that performs the work with one model call and writes artifacts. |
 | **Working memory** | Informal name for the envelope/blackboard: the state nodes read from and write to during a run. |

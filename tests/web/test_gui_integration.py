@@ -36,7 +36,7 @@ from modelgraph.web.server import ModelGraphHTTPServer
 ROOT = Path(__file__).resolve().parents[2]
 STATIC = ROOT / "src" / "modelgraph" / "web" / "static"
 DEMO_TASK = "Write a debounce function in TypeScript."
-PAGES = ("index.html", "graph.html", "run.html", "models.html")
+PAGES = ("index.html", "graph.html", "run.html", "models.html", "editor.html")
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 
 
@@ -212,7 +212,7 @@ def test_health_and_catalog_contract(gui: ModelGraphHTTPServer) -> None:
     status, headers, data = _request(gui, "GET", "/api/health")
     assert status == 200
     assert headers["content-type"].startswith("application/json")
-    assert _json(data) == {"ok": True, "version": "0.6.0", "ui": "1"}
+    assert _json(data) == {"ok": True, "version": "1.0.0", "ui": "1"}
 
     status, _, data = _request(gui, "GET", "/api/graphs")
     assert status == 200
@@ -249,7 +249,7 @@ def test_health_and_catalog_contract(gui: ModelGraphHTTPServer) -> None:
 
 
 def test_static_pages_assets_and_security_headers(gui: ModelGraphHTTPServer) -> None:
-    for page in ("/", "/index.html", "/graph.html", "/run.html", "/models.html"):
+    for page in ("/", "/index.html", "/graph.html", "/run.html", "/models.html", "/editor.html"):
         status, headers, data = _request(gui, "GET", page)
         assert status == 200, (page, data)
         assert headers["content-type"].startswith("text/html")
@@ -278,7 +278,13 @@ def test_static_pages_assets_and_security_headers(gui: ModelGraphHTTPServer) -> 
             elif ref.endswith(".css"):
                 assert headers["content-type"].startswith("text/css")
     assert {"/static/common.js", "/static/styles.css"} <= checked
-    assert {"/static/graph.js", "/static/run.js", "/static/models.js"} <= checked
+    assert {
+        "/static/graph.js",
+        "/static/run.js",
+        "/static/models.js",
+        "/static/editor.js",
+        "/static/editor.css",
+    } <= checked
 
 
 def test_mock_run_round_trip(gui: ModelGraphHTTPServer) -> None:
@@ -676,6 +682,8 @@ def test_pages_load_the_shared_shell_and_page_script() -> None:
     assert "/static/run.css" in audits["run.html"].stylesheets
     assert "/static/models.js" in audits["models.html"].scripts
     assert "/static/models.css" in audits["models.html"].stylesheets
+    assert "/static/editor.js" in audits["editor.html"].scripts
+    assert "/static/editor.css" in audits["editor.html"].stylesheets
 
     # Run history links to the console's recorded-run loader; keep that path wired.
     models_js = (STATIC / "models.js").read_text(encoding="utf-8")

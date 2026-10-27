@@ -77,7 +77,7 @@ Concretely:
 ## Follow-ups
 
 - Measure handoff loss: compare worker quality with a full vs. scoped view
-  ([T-0020](../../.scratch/tickets/T-0020-node-eval.md)).
+  (T-0020).
 - Revisit latent communication only for same-base-model nodes, behind a versioned protocol
   and an ADR, after v0 evidence.
 - Keep artifacts small and named; add a semantic-compression guideline when real traces

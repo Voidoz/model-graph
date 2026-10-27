@@ -71,9 +71,9 @@ runtime.**
 
 ## Follow-ups
 
-- [T-0003](../../.scratch/tickets/T-0003-graph-compiler.md) implements compile-time checks.
-- [T-0010](../../.scratch/tickets/T-0010-run-engine.md) implements the runtime walk.
-- [T-0015](../../.scratch/tickets/T-0015-pruning-lazy-loading.md) implements profile pruning
+- T-0003 implements compile-time checks.
+- T-0010 implements the runtime walk.
+- T-0015 implements profile pruning
   and records the effective graph.
 - If dynamic topology is ever pursued, it needs an ADR covering termination, permissions,
   cost, and evaluation.

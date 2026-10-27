@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "modelgraph"
-version = "0.6.0"
+version = "1.0.0"
 description = "Compose small language models into a routed, observable graph."
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }

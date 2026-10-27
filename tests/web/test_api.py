@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -114,7 +116,7 @@ def test_health(api: ModelGraphHTTPServer) -> None:
     assert status == 200
     assert content_type.startswith("application/json")
     payload = _json(data)
-    assert payload == {"ok": True, "version": "0.6.0", "ui": "1"}
+    assert payload == {"ok": True, "version": "1.0.0", "ui": "1"}
 
 
 def test_graphs_list_and_detail(api: ModelGraphHTTPServer) -> None:
@@ -491,3 +493,137 @@ def test_cli_ui_help_and_loopback_guard() -> None:
     remote = runner.invoke(app, ["ui", "--host", "0.0.0.0", "--port", "0"])
     assert remote.exit_code == 2
     assert "loopback" in remote.output
+
+
+def test_graph_source_validate_and_save_candidate(tmp_path: Path) -> None:
+    source_file = EXAMPLES / "hello-triage.graph.yaml"
+    original = source_file.read_text(encoding="utf-8")
+    with _running_server(runs_dir=tmp_path / "runs") as server:
+        status, _, data = _request(server, "GET", "/api/graphs/hello-triage/source")
+        assert status == 200
+        source = _json(data)
+        assert source["graph_id"] == "hello-triage"
+        assert "apiVersion: modelgraph/v0" in source["yaml"]
+
+        status, _, data = _request(
+            server,
+            "POST",
+            "/api/graphs/validate",
+            body={"yaml": source["yaml"]},
+        )
+        assert status == 200
+        valid = _json(data)
+        assert valid["valid"] is True
+        assert valid["errors"] == []
+        assert valid["graph"]["id"] == "hello-triage"
+        assert "/tmp/mg-gui-graph-" not in json.dumps(valid)
+
+        broken = source["yaml"].replace("kind: router", "kind: planner", 1)
+        status, _, data = _request(
+            server,
+            "POST",
+            "/api/graphs/validate",
+            body={"yaml": broken},
+        )
+        assert status == 200
+        assert _json(data)["valid"] is False
+        assert _json(data)["errors"]
+
+        status, _, data = _request(
+            server,
+            "POST",
+            "/api/graphs/candidates",
+            body={"yaml": source["yaml"]},
+        )
+        assert status == 201
+        candidate = _json(data)
+        assert candidate["candidate_id"].startswith("cand_")
+        assert candidate["graph_id"] == "hello-triage"
+        assert (tmp_path / "runs" / candidate["path"]).is_file()
+        assert source_file.read_text(encoding="utf-8") == original
+
+        status, _, data = _request(
+            server,
+            "POST",
+            "/api/graphs/run-candidate",
+            body={
+                "yaml": source["yaml"],
+                "task": "Write a debounce function in TypeScript.",
+                "provider": "mock",
+            },
+        )
+        assert status == 201, data
+        result = _json(data)
+        assert result["outcome"] == "succeeded"
+        assert result["path"][0]["to"] == "coding"
+
+
+def test_model_pull_job_and_installed_models(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "ollama"
+    fake.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "list" ]; then\n'
+        '  echo "NAME ID SIZE"\n'
+        '  echo "qwen2.5:1.5b-instruct abc 1GB"\n'
+        "  exit 0\n"
+        "fi\n"
+        'if [ "$1" = "pull" ]; then\n'
+        '  echo "pulling $2"\n'
+        '  echo "success"\n'
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", ""))
+
+    with _running_server(runs_dir=tmp_path / "runs") as server:
+        status, _, data = _request(server, "GET", "/api/models/installed")
+        assert status == 200
+        installed = _json(data)
+        assert installed["available"] is True
+        assert installed["installed"] == ["qwen2.5:1.5b-instruct"]
+
+        status, _, data = _request(server, "GET", "/api/graph-template")
+        assert status == 200
+        assert _json(data)["yaml"].startswith("apiVersion: modelgraph/v0")
+
+        status, _, data = _request(
+            server,
+            "POST",
+            "/api/models/pull",
+            body={"name": "qwen2.5:1.5b-instruct"},
+        )
+        assert status == 202, data
+        job = _json(data)
+        assert job["status"] == "running"
+        job_id = job["job_id"]
+
+        final = job
+        for _ in range(50):
+            status, _, data = _request(server, "GET", f"/api/models/pull/{job_id}")
+            assert status == 200
+            final = _json(data)
+            if final["status"] != "running":
+                break
+            time.sleep(0.05)
+        assert final["status"] == "succeeded"
+        assert any("success" in line for line in final["lines"])
+
+        status, _, data = _request(
+            server,
+            "POST",
+            "/api/models/pull",
+            body={"name": "bad name; rm -rf /"},
+        )
+        assert status == 400
+        _error(data)
+
+        status, _, data = _request(server, "GET", "/api/models/pull/does-not-exist")
+        assert status == 404
+        _error(data)
