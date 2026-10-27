@@ -301,7 +301,8 @@ Shared UI contract (`common.js`):
   deterministic mock provider.
 - The editor is YAML-first: it cannot invent fields the schema rejects, and it never writes the
   authored graph or promotes a revision. A saved candidate must go through the normal evaluation
-  and promotion workflow.
+  and revision workflow in the CLI. Promotion, rollback, and canary are intentionally not GUI
+  operations.
 - The editor does not execute graph content, does not accept filesystem paths, and renders all
   API values with text nodes.
 

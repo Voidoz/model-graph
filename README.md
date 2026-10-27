@@ -165,7 +165,7 @@ Pages:
   save a candidate under `runs/gui-candidates/`, and smoke-test it with the mock provider.
 
 Saving a candidate does **not** change the authored graph, the live deployment, or a revision.
-Candidates must go through the normal evaluation and revision workflow before promotion.
+Candidates must go through the normal evaluation and revision workflow in the CLI. Promotion, rollback, and canary are intentionally CLI-only; the editor never mutates the live deployment.
 
 Use `--port 0` for a free port, `--no-browser` to suppress the browser, and `--runs-dir PATH` to
 point history at another directory. See [`docs/gui.md`](docs/gui.md) for the API, page contract,
