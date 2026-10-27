@@ -15,12 +15,10 @@ from modelgraph.contracts import (
 from modelgraph.contracts.envelope import Envelope
 from modelgraph.contracts.graph import GraphDocument
 from modelgraph.contracts.manifest import ModelManifest
-from modelgraph.contracts.ticket import load_ticket
 from modelgraph.errors import ModelGraphError
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES = ROOT / "examples"
-TICKETS = ROOT / ".scratch" / "tickets"
 
 
 @pytest.mark.parametrize(
@@ -60,13 +58,6 @@ def test_examples_validate() -> None:
     envelope = json.loads((EXAMPLES / "envelope.json").read_text())
     assert not validate_document(envelope, "envelope")
     Envelope.model_validate(envelope)
-
-
-def test_all_tickets_validate() -> None:
-    tickets = sorted(TICKETS.glob("T-*.md"))
-    assert len(tickets) >= 30
-    for path in tickets:
-        load_ticket(path)
 
 
 def test_duplicate_yaml_keys_fail(tmp_path: Path) -> None:

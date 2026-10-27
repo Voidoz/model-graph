@@ -26,7 +26,7 @@ tests/fixtures/contracts/
     valid/*.envelope.json
     invalid/*.envelope.json
   ticket/
-    valid/*.ticket.md           # YAML frontmatter, as used by .scratch/tickets
+    valid/*.ticket.md           # YAML frontmatter
     invalid/*.ticket.md
   models/                       # small registry for cross-reference checks
   graphs/                       # inner/outer subgraph corpus
@@ -45,9 +45,7 @@ Naming conventions:
   Tests assert both, so an invalid fixture cannot silently fail for the wrong reason.
 - Every schema keeps at least three valid and three invalid fixtures. Add a fixture and its
   expectation together; `test_invalid_fixtures_have_expectations` rejects stale sidecars.
-- Ticket fixtures are Markdown files because the ticket contract is YAML frontmatter. The
-  repository copy of `.scratch/tickets/_template.md` is checked to exist and is explicitly
-  excluded from the `T-*.md` validation glob.
+- Ticket fixtures are Markdown files because the ticket contract is YAML frontmatter.
 
 ## Parity rules
 
